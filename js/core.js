@@ -764,6 +764,26 @@
   //* tab close
 
   //* grid open
+  const GRID_ZOOM_LEVELS = ['S', 'M', 'L'];
+  const GRID_ZOOM_CLASS_MAP = {
+    1: 'grid-size-s',
+    2: 'grid-size-m',
+    3: 'grid-size-l'
+  };
+
+  function bindGridZoomControls() {
+    const zoomInBtn = qs('btn-grid-zoom-in');
+    const zoomOutBtn = qs('btn-grid-zoom-out');
+    if (zoomInBtn && !zoomInBtn.dataset.bound) {
+      zoomInBtn.addEventListener('click', () => changeGridZoom(1));
+      zoomInBtn.dataset.bound = 'true';
+    }
+    if (zoomOutBtn && !zoomOutBtn.dataset.bound) {
+      zoomOutBtn.addEventListener('click', () => changeGridZoom(-1));
+      zoomOutBtn.dataset.bound = 'true';
+    }
+  }
+
   function changeGridZoom(direction) {
     playSound('click');
     state.gridZoom += direction;
@@ -776,10 +796,10 @@
   function updateGridZoomUi() {
     const text = qs('zoom-level-text');
     const grid = qs('grid-units');
-    if (text) text.textContent = state.gridZoom === 1 ? 'S' : state.gridZoom === 2 ? 'M' : 'L';
+    if (text) text.textContent = GRID_ZOOM_LEVELS[state.gridZoom - 1] || 'M';
     if (!grid) return;
-    grid.classList.remove('grid-cols-1', 'grid-cols-2', 'grid-cols-3');
-    grid.classList.add(state.gridZoom === 1 ? 'grid-cols-3' : state.gridZoom === 2 ? 'grid-cols-2' : 'grid-cols-1');
+    grid.classList.remove('grid-cols-1', 'grid-cols-2', 'grid-cols-3', 'grid-size-s', 'grid-size-m', 'grid-size-l');
+    grid.classList.add(`grid-cols-${state.gridZoom}`, GRID_ZOOM_CLASS_MAP[state.gridZoom] || 'grid-size-m');
   }
 
   function getUnitCardClass(unit) {
@@ -3831,6 +3851,7 @@
       updateSyncUi();
       updateMasterConnectionUi();
       syncCustomSearchUiMode();
+      bindGridZoomControls();
       renderAll();
       if (IS_CLIENT_NODE) {
         const profile = getClientProfile();

@@ -406,16 +406,28 @@ hr {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-#grid-units.grid-cols-1 {
-  grid-template-columns: repeat(1, minmax(0, 1fr));
-}
-
-#grid-units.grid-cols-2 {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
+#grid-units.grid-cols-1,
+#grid-units.grid-cols-2,
 #grid-units.grid-cols-3 {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--grid-cols, 2), minmax(0, 1fr));
+}
+
+#grid-units.grid-size-s > * {
+  min-height: 132px;
+  padding: 10px;
+  border-radius: 21px;
+}
+
+#grid-units.grid-size-m > * {
+  min-height: 150px;
+  padding: 13px;
+  border-radius: 26px;
+}
+
+#grid-units.grid-size-l > * {
+  min-height: 172px;
+  padding: 16px;
+  border-radius: 28px;
 }
 
 #grid-units > * {
@@ -1182,15 +1194,12 @@ hr {
     align-items: flex-start;
   }
 
-  #grid-units {
-    gap: 12px;
-    grid-template-columns: repeat(1, minmax(0, 1fr)) !important;
-  }
+  #grid-units { gap: 10px; }
 
   #grid-units > * {
-    min-height: 146px;
-    border-radius: 22px;
-    padding: 11px;
+    min-height: 132px;
+    border-radius: 18px;
+    padding: 10px;
   }
 
   #screen-customer,
@@ -1268,6 +1277,55 @@ hr {
     border-radius: 26px;
     padding: 18px;
   }
+}
+
+@media (max-width: 767px) {
+  #screen-customer,
+  #screen-shop,
+  #screen-manage,
+  #screen-system,
+  #screen-order {
+    padding-inline: 10px !important;
+  }
+
+  #grid-units {
+    --grid-cols: 2;
+    gap: 10px;
+  }
+
+  #grid-units > * {
+    min-height: 128px;
+    padding: 10px;
+    border-radius: 18px;
+  }
+
+  #sales-history > *,
+  #dash-top > *,
+  #dash-history > *,
+  #shop-queue > *,
+  #admin-menu-list > * {
+    padding: 11px;
+    border-radius: 16px;
+  }
+
+  #screen-customer .text-\[11px\],
+  #screen-shop .text-\[11px\],
+  #screen-manage .text-\[11px\],
+  #screen-system .text-\[11px\] {
+    font-size: 10px !important;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  #grid-units { --grid-cols: 3; }
+}
+
+@media (min-width: 1024px) and (max-width: 1279px) {
+  #grid-units { --grid-cols: 4; }
+}
+
+@media (min-width: 1280px) {
+  #grid-units { --grid-cols: 5; }
 }
 
 @media (max-width: 360px) {
