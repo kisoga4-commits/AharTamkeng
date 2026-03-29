@@ -1987,7 +1987,6 @@
   }
 
   async function importBackup(event) {
-    if (!state.isPro) return showToast('รุ่นทดลองไม่รองรับ Restore', 'error');
     const file = event?.target?.files?.[0];
     if (!file) return;
     if (!confirm('ข้อมูลในเครื่องจะถูกแทนที่ด้วยไฟล์ backup นี้ ยืนยันหรือไม่?')) return;
@@ -2145,10 +2144,6 @@
     if (addMenuBtn) addMenuBtn.disabled = state.db.items.length >= TRIAL_LIMITS.menuMax;
     const backupBtn = qs('btn-export-backup');
     if (backupBtn) backupBtn.disabled = true;
-    const restoreWrap = qs('btn-import-backup-wrap');
-    const restoreInput = qs('input-import-backup');
-    if (restoreWrap) restoreWrap.classList.add('opacity-50', 'pointer-events-none');
-    if (restoreInput) restoreInput.disabled = true;
   }
   //* pro/vault close
 
