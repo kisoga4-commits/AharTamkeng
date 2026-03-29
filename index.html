@@ -76,9 +76,9 @@
                 <div class="text-[10px] text-gray-400 font-bold mt-1 sr-only">กดโต๊ะเพื่อรับออร์เดอร์หรือดูรายการค้าง</div>
             </div>
             <div class="flex gap-2 bg-white p-1 rounded-xl shadow-sm border border-gray-100">
-                <button onclick="changeGridZoom(-1)" class="w-8 h-8 flex items-center justify-center bg-gray-50 text-gray-600 rounded-lg font-black text-lg active:scale-95">-</button>
+                <button id="btn-grid-zoom-out" class="w-8 h-8 flex items-center justify-center bg-gray-50 text-gray-600 rounded-lg font-black text-lg active:scale-95">-</button>
                 <div class="w-8 h-8 flex items-center justify-center font-bold text-xs text-gray-400" id="zoom-level-text">M</div>
-                <button onclick="changeGridZoom(1)" class="w-8 h-8 flex items-center justify-center bg-gray-50 text-gray-600 rounded-lg font-black text-lg active:scale-95">+</button>
+                <button id="btn-grid-zoom-in" class="w-8 h-8 flex items-center justify-center bg-gray-50 text-gray-600 rounded-lg font-black text-lg active:scale-95">+</button>
             </div>
         </div>
         <div id="customer-grid-toolbar" class="hidden mb-3 flex justify-end">
