@@ -80,6 +80,41 @@
     return { unlocked: true, shopId: storedShopId };
   }
 
+  async function initProStatus({ db = {}, shopId = '' } = {}) {
+    const proUnlocked = localStorage.getItem(LS_PRO_UNLOCKED) === 'true';
+    const proShopId = normalizeShopId(localStorage.getItem(LS_PRO_SHOP_ID) || '');
+
+    if (!proUnlocked || !proShopId) return false;
+
+    const currentShopId = normalizeShopId(
+      shopId
+      || db?.shopId
+      || getShopIdFromUnlockUi()
+      || localStorage.getItem(LS_SHOP_ID)
+      || ''
+    );
+
+    if (currentShopId && currentShopId !== proShopId) {
+      clearProStatus();
+      return false;
+    }
+
+    const currentLicenseCode = normalizeLicenseCode(db?.licenseToken || localStorage.getItem(LS_LICENSE) || '');
+    if (!currentLicenseCode) {
+      clearProStatus();
+      return false;
+    }
+
+    const verifyResult = await verifyLicenseDetail(currentLicenseCode, { db, shopId: proShopId });
+    if (!verifyResult.valid) {
+      clearProStatus();
+      return false;
+    }
+
+    saveProStatus(proShopId);
+    return true;
+  }
+
   function ensureDbShape(db) {
     const target = db && typeof db === 'object' ? db : {};
 
@@ -342,14 +377,13 @@
       clearProStatus();
       return false;
     }
-    const savedPro = loadProStatus(sid);
-    if (savedPro.unlocked) {
+    if (await initProStatus({ db, shopId: sid })) {
       db.shopId = sid;
       db.licenseActive = true;
       db.vault.installId = installId;
       db.vault.lastValidatedAt = now();
       db.vault.status = 'active';
-      db.vault.note = 'โหลดสถานะ Pro จากเครื่องนี้';
+      db.vault.note = 'โหลดสถานะ Pro จากเครื่องนี้ (ผ่านการรีเช็ก Firebase)';
       db.vault.licenseId = sid;
       db.vault.plan = 'pro';
       db.vault.features = ['all'];
@@ -489,6 +523,7 @@
     importVaultBackup,
     getStatus,
     buildGenKeyFromParts,
+    initProStatus,
     saveProStatus,
     loadProStatus,
     clearProStatus
