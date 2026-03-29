@@ -1,15 +1,10 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = '10.22-license-signature';
+  const APP_VERSION = '10.23-firebase-license-check';
   const LS_INSTALL_ID = 'FAKDU_VAULT_INSTALL_ID';
   const LS_SHOP_ID = 'FAKDU_VAULT_SHOP_ID';
   const LS_LICENSE = 'FAKDU_VAULT_GENKEY';
-
-  // ฝั่งแอปเก็บได้เฉพาะ public key เท่านั้น
-  // owner ต้องเก็บ private key แยกและใช้เซ็น GENKEY นอกแอป
-  // หมายเหตุ: ค่า default ด้านล่างเป็น placeholder เพื่อกันการฝังคีย์จริงลง client
-  const PUBLIC_VERIFY_KEY_B64URL = '__SET_OWNER_PUBLIC_KEY__';
 
   function now() {
     return Date.now();
@@ -80,29 +75,6 @@
     return target;
   }
 
-  function toBase64Url(bytes) {
-    let binary = '';
-    for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
-    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-  }
-
-  function fromBase64Url(input = '') {
-    const normalized = String(input || '').replace(/-/g, '+').replace(/_/g, '/');
-    const padded = normalized + '='.repeat((4 - (normalized.length % 4 || 4)) % 4);
-    const binary = atob(padded);
-    const out = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i += 1) out[i] = binary.charCodeAt(i);
-    return out;
-  }
-
-  function utf8Bytes(text = '') {
-    return new TextEncoder().encode(String(text));
-  }
-
-  function utf8String(bytes) {
-    return new TextDecoder().decode(bytes);
-  }
-
   async function getInstallId(provided = '') {
     const direct = String(provided || '').trim();
     if (direct) {
@@ -127,110 +99,81 @@
     return sid;
   }
 
-  function parseGenKey(genKey = '') {
-    const raw = normalizeLicenseCode(genKey);
-    if (!raw) return { ok: false, message: 'ต้องระบุ GENKEY' };
-
-    const parts = raw.split('.');
-    if (parts.length !== 3) {
-      return { ok: false, message: 'รูปแบบ GENKEY ไม่ถูกต้อง (ต้องเป็น header.payload.signature)' };
+  async function waitFirebaseReady(timeoutMs = 4000) {
+    const startedAt = now();
+    while (now() - startedAt < timeoutMs) {
+      if (window.FakduFirebase && window.FakduFirebase.ready && window.FakduFirebase.app) {
+        return window.FakduFirebase;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 120));
     }
-
-    const [headerB64, payloadB64, signatureB64] = parts;
-    const header = safeJsonParse(utf8String(fromBase64Url(headerB64)));
-    const payload = safeJsonParse(utf8String(fromBase64Url(payloadB64)));
-    if (!header || !payload) {
-      return { ok: false, message: 'GENKEY ไม่ใช่ JSON ที่ถูกต้อง' };
-    }
-
-    return {
-      ok: true,
-      token: raw,
-      header,
-      payload,
-      signingInput: `${headerB64}.${payloadB64}`,
-      signatureBytes: fromBase64Url(signatureB64)
-    };
+    throw new Error('Firebase ยังไม่พร้อมใช้งาน');
   }
 
-  async function importPublicVerifyKey() {
-    if (!window.crypto?.subtle) {
-      throw new Error('เบราว์เซอร์ไม่รองรับ WebCrypto');
-    }
-    if (!PUBLIC_VERIFY_KEY_B64URL || PUBLIC_VERIFY_KEY_B64URL.includes('__SET_OWNER_PUBLIC_KEY__')) {
-      throw new Error('ยังไม่ได้ตั้งค่า public verification key');
-    }
-
-    return window.crypto.subtle.importKey(
-      'raw',
-      fromBase64Url(PUBLIC_VERIFY_KEY_B64URL),
-      { name: 'Ed25519' },
-      false,
-      ['verify']
-    );
+  function getRealtimeDbUrl(firebaseRuntime) {
+    const direct = String(firebaseRuntime?.app?.options?.databaseURL || '').trim();
+    if (direct) return direct.replace(/\/+$/, '');
+    const fromDb = String(firebaseRuntime?.db?.app?.options?.databaseURL || '').trim();
+    if (fromDb) return fromDb.replace(/\/+$/, '');
+    throw new Error('ไม่พบ databaseURL จาก firebase-init.js');
   }
 
-  function validatePayloadShape(payload, expectedShopId) {
-    const required = ['type', 'version', 'shopId', 'plan', 'features', 'issuedAt', 'licenseId'];
-    for (const key of required) {
-      if (!(key in payload)) return { ok: false, message: `payload ขาดฟิลด์ ${key}` };
+  async function checkLicenseFromRealtimeDb({ shopId = '', licenseCode = '' } = {}) {
+    const sid = normalizeShopId(shopId);
+    const code = normalizeLicenseCode(licenseCode);
+
+    if (!sid) {
+      return { valid: false, message: 'ไม่พบ shopId สำหรับตรวจ license' };
+    }
+    if (!code) {
+      return { valid: false, message: 'กรอกรหัส license ก่อน' };
     }
 
-    if (String(payload.type || '') !== 'fakdu_license') {
-      return { ok: false, message: 'payload.type ต้องเป็น fakdu_license' };
-    }
-
-    const normalizedPayloadShopId = normalizeShopId(payload.shopId || '');
-    if (!normalizedPayloadShopId) {
-      return { ok: false, message: 'payload.shopId ไม่ถูกต้อง' };
-    }
-
-    if (normalizedPayloadShopId !== normalizeShopId(expectedShopId)) {
-      return { ok: false, message: 'GENKEY นี้ไม่ตรงกับ shopId เครื่องนี้' };
-    }
-
-    if (!Array.isArray(payload.features)) {
-      return { ok: false, message: 'payload.features ต้องเป็น array' };
-    }
-
-    const issuedAtMs = Number(payload.issuedAt || 0);
-    if (!Number.isFinite(issuedAtMs) || issuedAtMs <= 0) {
-      return { ok: false, message: 'payload.issuedAt ไม่ถูกต้อง' };
-    }
-
-    return { ok: true };
-  }
-
-  async function verifyGenKey(genKey, expectedShopId) {
-    const parsed = parseGenKey(genKey);
-    if (!parsed.ok) return { valid: false, message: parsed.message };
-
-    const shape = validatePayloadShape(parsed.payload, expectedShopId);
-    if (!shape.ok) return { valid: false, message: shape.message };
-
-    if (String(parsed.header?.alg || '') !== 'EdDSA') {
-      return { valid: false, message: 'header.alg ต้องเป็น EdDSA' };
+    let firebaseRuntime;
+    try {
+      firebaseRuntime = await waitFirebaseReady();
+    } catch (error) {
+      return { valid: false, message: error?.message || 'Firebase ไม่พร้อม' };
     }
 
     try {
-      const key = await importPublicVerifyKey();
-      const verified = await window.crypto.subtle.verify(
-        { name: 'Ed25519' },
-        key,
-        parsed.signatureBytes,
-        utf8Bytes(parsed.signingInput)
-      );
+      const baseUrl = getRealtimeDbUrl(firebaseRuntime);
+      const pathShopId = encodeURIComponent(sid);
+      const response = await fetch(`${baseUrl}/licenses/${pathShopId}.json`, {
+        method: 'GET',
+        cache: 'no-store'
+      });
 
-      if (!verified) return { valid: false, message: 'ลายเซ็น GENKEY ไม่ถูกต้อง' };
+      if (!response.ok) {
+        return { valid: false, message: `อ่าน license ไม่สำเร็จ (HTTP ${response.status})` };
+      }
+
+      const licenseDoc = await response.json();
+
+      if (!licenseDoc || typeof licenseDoc !== 'object') {
+        return { valid: false, message: 'ไม่พบ shop นี้ในระบบ license' };
+      }
+
+      if (licenseDoc.active !== true) {
+        return { valid: false, message: 'license ยังไม่ active' };
+      }
+
+      if (String(licenseDoc.licenseCode || '') !== code) {
+        return { valid: false, message: 'licenseCode ไม่ถูกต้อง' };
+      }
 
       return {
         valid: true,
-        token: parsed.token,
-        payload: parsed.payload,
-        message: 'ตรวจสอบ GENKEY ผ่าน'
+        token: code,
+        payload: {
+          shopId: sid,
+          active: true,
+          source: 'firebase_realtime_db'
+        },
+        message: 'ตรวจสอบ license ผ่าน'
       };
     } catch (error) {
-      return { valid: false, message: error?.message || 'ตรวจสอบ GENKEY ไม่สำเร็จ' };
+      return { valid: false, message: error?.message || 'เชื่อมต่อ Firebase ไม่สำเร็จ' };
     }
   }
 
@@ -239,52 +182,55 @@
     const sid = await ensureShopId(db, shopId);
     const installId = await getInstallId(deviceId);
     const request = {
-      type: 'fakdu_license',
-      version: 1,
+      type: 'fakdu_license_check',
       shopId: sid,
-      plan: 'pro',
-      features: ['all'],
-      issuedAt: now(),
-      licenseId: `LIC-${randomString(10)}`,
       installId,
-      note: 'owner ต้องเซ็น payload นี้ด้วย private key เพื่อสร้าง GENKEY'
+      note: 'ระบบนี้เช็กตรงจาก Firebase Realtime Database ที่ path licenses/{shopId}'
     };
     return { ok: true, request, printable: JSON.stringify(request, null, 2) };
   }
 
   async function createGenKey() {
-    return { ok: false, message: 'ปิดการสร้าง GENKEY ในแอป (ต้องทำฝั่ง owner ที่ถือ private key เท่านั้น)' };
+    return { ok: false, message: 'ปิด GENKEY ชั่วคราว: ใช้การเช็กจาก Firebase Realtime Database แทน' };
   }
 
   async function createLicenseToken() {
-    return { ok: false, message: 'ใช้ GENKEY ที่เซ็นจาก owner เท่านั้น' };
+    return { ok: false, message: 'ใช้ licenseCode จาก owner แล้วเช็กกับ Firebase โดยตรง' };
   }
 
   async function validateProKey({ key = '', shopId = '', deviceId = '', db = {} } = {}) {
     ensureDbShape(db);
     const sid = await ensureShopId(db, shopId);
     const installId = await getInstallId(deviceId);
-    const result = await verifyGenKey(key, sid);
-    if (!result.valid) return result;
+    const code = normalizeLicenseCode(key);
 
-    const payload = result.payload || {};
+    const result = await checkLicenseFromRealtimeDb({ shopId: sid, licenseCode: code });
+    if (!result.valid) {
+      db.licenseActive = false;
+      db.vault.installId = installId;
+      db.vault.lastValidatedAt = now();
+      db.vault.status = 'invalid';
+      db.vault.note = result.message || 'ไม่ผ่านการตรวจสอบ license';
+      return result;
+    }
+
     db.shopId = sid;
-    db.licenseToken = result.token;
+    db.licenseToken = code;
     db.licenseActive = true;
     db.vault.installId = installId;
     db.vault.activatedAt = db.vault.activatedAt || now();
     db.vault.lastValidatedAt = now();
     db.vault.status = 'active';
-    db.vault.note = result.message || 'GENKEY valid';
-    db.vault.licenseId = String(payload.licenseId || '');
-    db.vault.plan = String(payload.plan || 'pro');
-    db.vault.features = Array.isArray(payload.features) ? clone(payload.features) : [];
+    db.vault.note = result.message || 'license valid';
+    db.vault.licenseId = sid;
+    db.vault.plan = 'pro';
+    db.vault.features = ['all'];
 
-    localStorage.setItem(LS_LICENSE, result.token);
+    localStorage.setItem(LS_LICENSE, code);
 
     return {
       valid: true,
-      token: result.token,
+      token: code,
       shopId: sid,
       licenseId: db.vault.licenseId,
       plan: db.vault.plan,
@@ -305,37 +251,36 @@
     ensureDbShape(db);
     const sid = await ensureShopId(db);
     const installId = await getInstallId();
-    const token = normalizeLicenseCode(db.licenseToken || localStorage.getItem(LS_LICENSE) || '');
+    const code = normalizeLicenseCode(db.licenseToken || localStorage.getItem(LS_LICENSE) || '');
 
-    if (!token) {
+    if (!code) {
       db.licenseActive = false;
       db.vault.installId = installId;
       db.vault.status = 'idle';
-      db.vault.note = 'ยังไม่มี GENKEY';
+      db.vault.note = 'ยังไม่มี licenseCode';
       return false;
     }
 
-    const result = await verifyGenKey(token, sid);
-    if (!result.valid) {
-      db.licenseActive = false;
-      db.vault.installId = installId;
-      db.vault.lastValidatedAt = now();
-      db.vault.status = 'invalid';
-      db.vault.note = result.message || 'GENKEY ไม่ผ่านการตรวจสอบ';
-      return false;
-    }
+    const result = await checkLicenseFromRealtimeDb({ shopId: sid, licenseCode: code });
 
-    const payload = result.payload || {};
-    db.licenseToken = token;
-    db.licenseActive = true;
     db.vault.installId = installId;
     db.vault.lastValidatedAt = now();
+
+    if (!result.valid) {
+      db.licenseActive = false;
+      db.vault.status = 'invalid';
+      db.vault.note = result.message || 'license ไม่ผ่านการตรวจสอบ';
+      return false;
+    }
+
+    db.licenseToken = code;
+    db.licenseActive = true;
     db.vault.status = 'active';
-    db.vault.note = 'GENKEY valid';
-    db.vault.licenseId = String(payload.licenseId || db.vault.licenseId || '');
-    db.vault.plan = String(payload.plan || db.vault.plan || 'pro');
-    db.vault.features = Array.isArray(payload.features) ? clone(payload.features) : [];
-    localStorage.setItem(LS_LICENSE, token);
+    db.vault.note = result.message || 'license valid';
+    db.vault.licenseId = sid;
+    db.vault.plan = 'pro';
+    db.vault.features = ['all'];
+    localStorage.setItem(LS_LICENSE, code);
     return true;
   }
 
@@ -414,9 +359,8 @@
     };
   }
 
-  // Helper for owner toolchain only (not used by app flow)
   function buildGenKeyFromParts({ header, payload, signature }) {
-    return `${toBase64Url(utf8Bytes(JSON.stringify(header || {})))}.${toBase64Url(utf8Bytes(JSON.stringify(payload || {})))}.${toBase64Url(signature || new Uint8Array(0))}`;
+    return JSON.stringify({ header: header || {}, payload: payload || {}, signature: signature || '' });
   }
 
   window.FakduVault = {
