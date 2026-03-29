@@ -5,6 +5,7 @@
   const APP_VERSION = '10.20';
   const LS_ADMIN = 'FAKDU_ADMIN_LOGGED_IN';
   const LS_DEFERRED_INSTALL = 'FAKDU_DEFERRED_INSTALL';
+  const LS_INSTALL_BANNER_DISMISSED = 'FAKDU_INSTALL_BANNER_DISMISSED';
   const LS_SNAPSHOT_PREFIX = 'FAKDU_SYNC_SNAPSHOT_';
   const LS_PENDING_SYNC_VERSION = 'FAKDU_PENDING_SYNC_VERSION';
   const LS_CLIENT_OP_QUEUE = 'FAKDU_CLIENT_OP_QUEUE';
@@ -3646,29 +3647,63 @@
   //* client profile close
 
   //* install open
+  function isInstalledAppContext() {
+    try {
+      return window.matchMedia('(display-mode: standalone)').matches ||
+        window.navigator.standalone === true ||
+        document.referrer.startsWith('android-app://');
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function isInstallBannerDismissed() {
+    return localStorage.getItem(LS_INSTALL_BANNER_DISMISSED) === 'true';
+  }
+
+  function syncInstallBannerVisibility() {
+    const banner = qs('pwa-install-banner');
+    if (!banner) return;
+
+    const shouldShow = Boolean(state.deferredInstallPrompt) &&
+      !isInstallBannerDismissed() &&
+      !isInstalledAppContext();
+
+    banner.classList.toggle('hidden', !shouldShow);
+  }
+
+  function dismissPWAInstallBanner() {
+    localStorage.setItem(LS_INSTALL_BANNER_DISMISSED, 'true');
+    syncInstallBannerVisibility();
+  }
+
   function installPWA() {
     if (!state.deferredInstallPrompt) {
       showToast('ยังติดตั้งไม่ได้ในตอนนี้', 'error');
       return;
     }
+    localStorage.removeItem(LS_INSTALL_BANNER_DISMISSED);
     state.deferredInstallPrompt.prompt();
     state.deferredInstallPrompt.userChoice.finally(() => {
       state.deferredInstallPrompt = null;
-      qs('pwa-install-banner')?.classList.add('hidden');
+      syncInstallBannerVisibility();
     });
   }
 
   window.addEventListener('beforeinstallprompt', (event) => {
     event.preventDefault();
     state.deferredInstallPrompt = event;
-    qs('pwa-install-banner')?.classList.remove('hidden');
+    syncInstallBannerVisibility();
   });
 
   window.addEventListener('appinstalled', () => {
     state.deferredInstallPrompt = null;
     localStorage.removeItem(LS_DEFERRED_INSTALL);
-    qs('pwa-install-banner')?.classList.add('hidden');
+    localStorage.removeItem(LS_INSTALL_BANNER_DISMISSED);
+    syncInstallBannerVisibility();
   });
+
+  window.matchMedia('(display-mode: standalone)').addEventListener?.('change', syncInstallBannerVisibility);
   //* install close
 
   async function fallbackCopyText(text = '') {
@@ -3905,6 +3940,7 @@
     closeModal,
     openModal,
     installPWA,
+    dismissPWAInstallBanner,
     copyUnlockShopId,
     switchTab,
     attemptAdmin,
