@@ -1,124 +1,88 @@
-// sw.js - Service Worker (FAKDU v9.46)
+/**
+ * PosThaiban - Service Worker V11.2.4 (The Ultimate Masterpiece)
+ * ระบบเชื่อมโยงการอัปเดต + ทนทานต่อการโหลดไฟล์พลาด + ออฟไลน์สมบูรณ์แบบ
+ */
 
-const SW_VERSION = '9.48.5';
-const CACHE_NAME = `fakdu-cache-v${SW_VERSION}`;
-const META_CACHE_NAME = `fakdu-cache-meta-v${SW_VERSION}`;
-const CACHE_MAX_AGE_MS = 60 * 24 * 60 * 60 * 1000;
-let lastCleanupAt = 0;
+const CACHE_NAME = 'posthaiban-v11-2-7-stable'; 
 
-const ASSETS_TO_CACHE = [
+const CORE_ASSETS = [
   './',
   './index.html',
-  './style.css',
   './manifest.json',
   './icon.png',
-  './js/db.js',
-  './js/core.js',
-  './js/vault.js'
+  'https://cdn.tailwindcss.com',
+  'https://unpkg.com/html5-qrcode',
+  'https://unpkg.com/dexie/dist/dexie.js',
+  'https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;800;900&display=swap'
 ];
 
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    Promise.all([
-      caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS_TO_CACHE)),
-      caches.open(META_CACHE_NAME)
-    ])
-  );
-  self.skipWaiting();
+// 🟢 1. รอรับคำสั่ง "ผลัดใบ" จากหน้า index.html 
+// (พอลูกค้ากด OK ยืนยันอัปเดต ค่อยสั่ง skipWaiting จะได้ไม่รีเฟรชผีหลอก)
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
-async function stampCacheEntry(request) {
-  const metaCache = await caches.open(META_CACHE_NAME);
-  await metaCache.put(request.url, new Response(String(Date.now())));
-}
-
-async function cleanupExpiredCacheEntries() {
-  const [dataCache, metaCache] = await Promise.all([
-    caches.open(CACHE_NAME),
-    caches.open(META_CACHE_NAME)
-  ]);
-  const [requests, metaRequests] = await Promise.all([
-    dataCache.keys(),
-    metaCache.keys()
-  ]);
-  const now = Date.now();
-  await Promise.all(requests.map(async (request) => {
-    const metaResponse = await metaCache.match(request.url);
-    const cachedAt = Number((await metaResponse?.text?.()) || 0);
-    if (!cachedAt || (now - cachedAt) > CACHE_MAX_AGE_MS) {
-      await Promise.all([
-        dataCache.delete(request),
-        metaCache.delete(request.url)
-      ]);
-    }
-  }));
-  const urlSet = new Set(requests.map((request) => request.url));
-  await Promise.all(metaRequests
-    .filter((request) => !urlSet.has(request.url))
-    .map((request) => metaCache.delete(request)));
-}
-
-self.addEventListener('activate', (event) => {
+// 🛠️ 2. Install - สั่งดาวน์โหลดไฟล์
+self.addEventListener('install', event => {
   event.waitUntil(
-    caches.keys().then(async (names) => {
-      await Promise.all(
-        names
-          .filter((name) => name !== CACHE_NAME && name !== META_CACHE_NAME)
-          .map((name) => caches.delete(name))
+    caches.open(CACHE_NAME).then(cache => {
+      console.log('📦 SW: กำลังสูบไฟล์ลงเครื่อง (PosThaiban V11.2.4)...');
+      // ใช้ลอจิกเก็บทีละไฟล์ ป้องกันบั๊ก "ขาด 1 ตายหมู่"
+      return Promise.allSettled(
+        CORE_ASSETS.map(url => cache.add(url).catch(err => console.error(`SW: โหลดไฟล์ ${url} ไม่สำเร็จ`, err)))
       );
-      await cleanupExpiredCacheEntries();
     })
   );
-  self.clients.claim();
 });
 
-self.addEventListener('fetch', (event) => {
+// 🛠️ 3. Activate - ล้างโกดังเก่าทิ้ง
+self.addEventListener('activate', event => {
+  event.waitUntil(
+    caches.keys().then(keys => {
+      return Promise.all(
+        keys.map(key => {
+          if (key !== CACHE_NAME) {
+            console.log('🗑️ SW: ลบแคชเวอร์ชันเก่าทิ้งแล้ว ->', key);
+            return caches.delete(key);
+          }
+        })
+      );
+    })
+  );
+  return self.clients.claim(); 
+});
+
+// 🛠️ 4. Fetch - กลยุทธ์ Cache-First
+self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
 
-  const requestUrl = new URL(event.request.url);
-  if (requestUrl.origin !== self.location.origin) return;
-  if ((Date.now() - lastCleanupAt) > (12 * 60 * 60 * 1000)) {
-    lastCleanupAt = Date.now();
-    event.waitUntil(cleanupExpiredCacheEntries().catch(() => {}));
-  }
+  event.respondWith(
+    caches.match(event.request).then(cachedResponse => {
+      // 🛡️ ด่าน 1: เจอในแคช ส่งให้เลย
+      if (cachedResponse) return cachedResponse;
 
-  event.respondWith((async () => {
-    const cached = await caches.match(event.request);
-    const isNavigation = event.request.mode === 'navigate';
-
-    if (isNavigation) {
-      if (cached) return cached;
-      try {
-        const networkResponse = await fetch(event.request);
-        if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
-          const cache = await caches.open(CACHE_NAME);
-          await cache.put(event.request, networkResponse.clone());
-          stampCacheEntry(event.request).catch(() => {});
+      // 🌐 ด่าน 2: ไม่เจอในแคช ไปดึงจากเน็ต
+      return fetch(event.request).then(networkResponse => {
+        // ห้ามเก็บไฟล์ที่โหลดไม่สมบูรณ์
+        if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
+          return networkResponse;
         }
-        return networkResponse;
-      } catch (_) {
-        const fallback = await caches.match('./index.html')
-          || await caches.match('/FAKDU3/index.html')
-          || await caches.match('./');
-        if (fallback) return fallback;
-        return new Response(
-          '<!doctype html><html><body style="font-family:sans-serif;padding:16px">Offline และยังไม่มี cache หน้าเริ่มต้น</body></html>',
-          { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
-        );
-      }
-    }
 
-    if (cached) return cached;
-    try {
-      const response = await fetch(event.request);
-      if (response && response.status === 200 && response.type === 'basic') {
-        const cache = await caches.open(CACHE_NAME);
-        await cache.put(event.request, response.clone());
-        stampCacheEntry(event.request).catch(() => {});
-      }
-      return response;
-    } catch (_) {
-      return new Response('', { status: 504, statusText: 'Offline' });
-    }
-  })());
+        // 💾 ด่าน 3: ถ่ายเอกสารเก็บลงแคช
+        const responseToCache = networkResponse.clone();
+        caches.open(CACHE_NAME).then(cache => {
+          cache.put(event.request, responseToCache);
+        });
+
+        return networkResponse;
+      }).catch(() => {
+        // 🆘 ด่าน 4: ไม่มีเน็ต และไม่มีในแคช ให้โหลด index.html แทนเพื่อกันจอขาว
+        if (event.request.headers.get('accept').includes('text/html')) {
+          return caches.match('./index.html');
+        }
+      });
+    })
+  );
 });
