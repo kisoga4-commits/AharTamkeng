@@ -1,5 +1,5 @@
 // sw.js - FAKDU Offline-First App Shell
-const SW_VERSION = '10.30.0';
+const SW_VERSION = '10.30.1';
 const APP_SHELL_CACHE = `fakdu-app-shell-v${SW_VERSION}`;
 const RUNTIME_CACHE = `fakdu-runtime-v${SW_VERSION}`;
 const OFFLINE_FALLBACK_URL = './offline.html';
