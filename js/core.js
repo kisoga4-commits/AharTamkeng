@@ -1116,17 +1116,19 @@
     const list = qs('review-list');
     if (list) {
       list.innerHTML = cart.map((row, index) => `
-        <div class="py-3 flex items-center justify-between gap-3">
-          <div class="flex-1 min-w-0">
-            <div class="font-black text-gray-800 truncate">${escapeHtml(row.name)}</div>
-            <div class="text-[11px] text-gray-500 font-bold">฿${formatMoney(row.price)} × ${row.qty}</div>
+        <div class="py-3">
+          <div class="flex items-start justify-between gap-3">
+            <div class="flex-1 min-w-0">
+              <div class="font-black text-gray-800 leading-tight break-words">${escapeHtml(row.name)}</div>
+              <div class="text-[11px] text-gray-500 font-bold mt-1">฿${formatMoney(row.price)} / รายการ</div>
+            </div>
+            <div class="font-black theme-text text-right shrink-0">฿${formatMoney(row.total)}</div>
           </div>
-          <div class="flex items-center gap-2">
-            <button onclick="editCartItem(${index}, -1)" class="w-8 h-8 rounded-lg bg-gray-100 font-black">-</button>
-            <span class="font-black text-lg w-6 text-center">${row.qty}</span>
-            <button onclick="editCartItem(${index}, 1)" class="w-8 h-8 rounded-lg bg-gray-100 font-black">+</button>
+          <div class="mt-3 inline-flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-xl px-2 py-1">
+            <button onclick="editCartItem(${index}, -1)" class="w-8 h-8 rounded-lg bg-white border border-gray-200 font-black text-gray-700">−</button>
+            <span class="font-black text-base min-w-[24px] text-center">${row.qty}</span>
+            <button onclick="editCartItem(${index}, 1)" class="w-8 h-8 rounded-lg bg-white border border-gray-200 font-black text-gray-700">+</button>
           </div>
-          <div class="font-black theme-text w-20 text-right">฿${formatMoney(row.total)}</div>
         </div>
       `).join('');
     }
@@ -1338,13 +1340,12 @@
     state.currentCheckoutTotal = total;
     if (qs('checkout-unit-id')) qs('checkout-unit-id').textContent = String(unit.id);
     if (qs('checkout-total')) qs('checkout-total').textContent = formatMoney(total);
-    if (qs('checkout-live-time')) qs('checkout-live-time').textContent = `เวลาใช้งาน: ${formatDurationFrom(unit.startTime)}`;
     if (list) {
       list.innerHTML = unit.orders.map((row, index) => `
         <div class="flex justify-between items-center gap-3 py-3">
           <div class="min-w-0 flex-1">
             <div class="font-black text-gray-800 truncate">${escapeHtml(row.name)}</div>
-            <div class="text-[10px] text-gray-400 font-bold mt-1">${row.orderBy || 'Master'} • ${thaiDate(row.createdAt)}</div>
+            <div class="text-[10px] text-gray-400 font-bold mt-1">${thaiDate(row.createdAt)}</div>
           </div>
           <div class="flex items-center gap-2 shrink-0">
             <div class="font-black">x${row.qty}</div>
@@ -3859,10 +3860,6 @@
         const start = Number(el.getAttribute('data-start') || 0);
         if (start) el.textContent = formatDurationFrom(start);
       });
-      const active = state.db.units.find((unit) => unit.id === Number(state.activeUnitId));
-      if (!qs('modal-checkout')?.classList.contains('hidden') && active && qs('checkout-live-time')) {
-        qs('checkout-live-time').textContent = `เวลาใช้งาน: ${formatDurationFrom(active.startTime)}`;
-      }
       renderOnlineClientsUi();
       if (IS_CLIENT_NODE) {
         const tick = Date.now();
