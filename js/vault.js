@@ -8,6 +8,8 @@
   const LS_STORED_LICENSE = 'FAKDU_VAULT_STORED_LICENSE_V1020';
   const EXPECTED_APP = 'FAKDU';
   const EXPECTED_LICENSE_TYPE = 'fakdu_license';
+  const IDB_KEY_SHOP_ID = 'vault_shop_id';
+  const IDB_KEY_INSTALL_ID = 'vault_install_id';
 
   // Client must contain public key only. Put real SPKI PEM here later.
   const PUBLIC_KEY_PEM_PLACEHOLDER = 'REPLACE_WITH_REAL_PUBLIC_KEY_PEM';
@@ -105,6 +107,21 @@
   }
   async function shortHash(message, len = 24) { return (await sha256Hex(message)).slice(0, len); }
 
+  async function kvGet(key) {
+    try {
+      const dbApi = window.FakduDB;
+      if (dbApi && typeof dbApi._kvGet === 'function') return await dbApi._kvGet(key);
+    } catch (_) {}
+    return null;
+  }
+
+  async function kvSet(key, value) {
+    try {
+      const dbApi = window.FakduDB;
+      if (dbApi && typeof dbApi._kvSet === 'function') await dbApi._kvSet(key, value);
+    } catch (_) {}
+  }
+
   function buildSoftFingerprintSeed() {
     const parts = [
       navigator.userAgent || '',
@@ -120,23 +137,25 @@
     return parts.join('|');
   }
 
-  async function getInstallId(provided = '') {
+  async function getOrCreateInstallId(provided = '') {
     const direct = String(provided || '').trim();
     if (direct) {
       localStorage.setItem(LS_INSTALL_ID, direct);
+      await kvSet(IDB_KEY_INSTALL_ID, direct);
       return direct;
     }
-    let installId = localStorage.getItem(LS_INSTALL_ID) || '';
+    let installId = localStorage.getItem(LS_INSTALL_ID) || String(await kvGet(IDB_KEY_INSTALL_ID) || '');
     if (!installId) {
       installId = `FDI-${randomString(8)}-${Date.now().toString(36).toUpperCase()}`;
-      localStorage.setItem(LS_INSTALL_ID, installId);
     }
+    localStorage.setItem(LS_INSTALL_ID, installId);
+    await kvSet(IDB_KEY_INSTALL_ID, installId);
     return installId;
   }
 
   async function buildBindingRefs(shopId, installId = '') {
     const sid = normalizeShopId(shopId);
-    const iid = await getInstallId(installId);
+    const iid = await getOrCreateInstallId(installId);
     const softSeed = buildSoftFingerprintSeed();
     return {
       shopId: sid,
@@ -148,10 +167,17 @@
 
   async function ensureShopId(db, fallback = '') {
     ensureDbShape(db);
-    let sid = normalizeShopId(db?.shopId || localStorage.getItem(LS_LAST_SHOP_ID) || fallback || '');
+    let sid = normalizeShopId(
+      db?.shopId
+      || localStorage.getItem(LS_LAST_SHOP_ID)
+      || String(await kvGet(IDB_KEY_SHOP_ID) || '')
+      || fallback
+      || ''
+    );
     if (!sid) sid = `SHOP-${randomString(8)}`;
     if (db) db.shopId = sid;
     localStorage.setItem(LS_LAST_SHOP_ID, sid);
+    await kvSet(IDB_KEY_SHOP_ID, sid);
     return sid;
   }
 
@@ -202,6 +228,7 @@
     const refs = await buildBindingRefs(sid, deviceId);
     const payload = {
       typ: 'fakdu_activation_request',
+      app: EXPECTED_APP,
       appVersion: APP_VERSION,
       shopId: sid,
       installId: refs.installId,
@@ -468,6 +495,7 @@
     APP_VERSION,
     normalizeShopId,
     getCurrentShopId,
+    getOrCreateInstallId,
     getActivationRequest,
     getRequestCode,
     activateWithGenkey,
