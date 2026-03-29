@@ -14,7 +14,11 @@ const ASSETS_TO_CACHE = [
   './icon.png',
   './js/db.js',
   './js/core.js',
-  './js/vault.js'
+  './js/vault.js',
+  './js/machine-id.js',
+  './launchericon-48x48.png',
+  './launchericon-72x72.png',
+  './launchericon-96x96.png'
 ];
 
 self.addEventListener('install', (event) => {
