@@ -14,7 +14,8 @@ const ASSETS_TO_CACHE = [
   './icon.png',
   './js/db.js',
   './js/core.js',
-  './js/vault.js'
+  './js/vault.js',
+  './js/firebase-init.js'
 ];
 
 self.addEventListener('install', (event) => {
