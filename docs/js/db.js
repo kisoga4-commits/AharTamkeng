@@ -607,12 +607,25 @@
     return payload;
   }
 
+  async function exportData(data = null) {
+    if (data && typeof data === 'object') {
+      return JSON.stringify(jsonClone(data), null, 2);
+    }
+    const payload = await exportBackup();
+    return JSON.stringify(payload, null, 2);
+  }
+
   async function importBackup(rawInput) {
     const parsed = typeof rawInput === 'string' ? safeParse(rawInput) : rawInput;
     const normalized = normalizeImportedBackup(parsed);
     await save(normalized);
     await metaSet(META_LAST_IMPORT_AT, nowIso());
     return true;
+  }
+
+  async function importData(rawInput) {
+    const parsed = typeof rawInput === 'string' ? safeParse(rawInput) : rawInput;
+    return normalizeImportedBackup(parsed);
   }
 
   async function wipeClientLocal() {
@@ -683,7 +696,9 @@
     loadRuntimeFlags,
     saveRuntimeFlags,
     exportBackup,
+    exportData,
     importBackup,
+    importData,
     wipeClientLocal,
     getStorageInfo,
     healthCheck,
