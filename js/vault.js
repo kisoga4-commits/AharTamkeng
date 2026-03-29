@@ -10,6 +10,7 @@
   const EXPECTED_LICENSE_TYPE = 'fakdu_license';
   const IDB_KEY_SHOP_ID = 'vault_shop_id';
   const IDB_KEY_INSTALL_ID = 'vault_install_id';
+  const IDB_KEY_STORED_LICENSE = 'vault_stored_license';
 
   // Client must contain public key only. Put real SPKI PEM here later.
   const PUBLIC_KEY_PEM_PLACEHOLDER = 'REPLACE_WITH_REAL_PUBLIC_KEY_PEM';
@@ -174,15 +175,27 @@
       || fallback
       || ''
     );
-    if (!sid) sid = `SHOP-${randomString(8)}`;
     if (db) db.shopId = sid;
-    localStorage.setItem(LS_LAST_SHOP_ID, sid);
-    await kvSet(IDB_KEY_SHOP_ID, sid);
+    if (sid) {
+      localStorage.setItem(LS_LAST_SHOP_ID, sid);
+      await kvSet(IDB_KEY_SHOP_ID, sid);
+    }
     return sid;
   }
 
   async function getCurrentShopId(db = {}, fallback = '') {
     return ensureShopId(db, fallback);
+  }
+
+  async function setCurrentShopId(shopId, db = {}) {
+    ensureDbShape(db);
+    const sid = normalizeShopId(shopId);
+    if (!sid) return { ok: false, message: 'shopId ไม่ถูกต้อง' };
+    db.shopId = sid;
+    localStorage.setItem(LS_LAST_SHOP_ID, sid);
+    await kvSet(IDB_KEY_SHOP_ID, sid);
+    setVaultState({ shopId: sid });
+    return { ok: true, shopId: sid };
   }
 
   function getConfiguredPublicKeyPem() {
@@ -246,13 +259,19 @@
     };
   }
 
-  function loadLicense() {
+  async function loadLicense() {
+    const fromIdb = await kvGet(IDB_KEY_STORED_LICENSE);
+    if (fromIdb && typeof fromIdb === 'object') {
+      localStorage.setItem(LS_STORED_LICENSE, JSON.stringify(fromIdb));
+      return fromIdb;
+    }
     return safeJsonParse(localStorage.getItem(LS_STORED_LICENSE), null);
   }
 
-  function saveLicense(license) {
+  async function saveLicense(license) {
     const cloned = clone(license);
     localStorage.setItem(LS_STORED_LICENSE, JSON.stringify(cloned));
+    await kvSet(IDB_KEY_STORED_LICENSE, cloned);
     const statePatch = {
       shopId: cloned?.payload?.shopId || '',
       installRef: cloned?.payload?.installRef || '',
@@ -272,7 +291,7 @@
   async function verifyStoredLicense(db = {}) {
     ensureDbShape(db);
     const sid = await ensureShopId(db);
-    const license = loadLicense();
+    const license = await loadLicense();
     if (!license || typeof license !== 'object') {
       db.licenseActive = false;
       db.vault.status = 'idle';
@@ -306,20 +325,12 @@
       return { valid: false, message: 'license สิทธิ์ไม่ครบ (ต้องเป็น Pro Lifetime)' };
     }
 
-    const refs = await buildBindingRefs(sid);
     if (normalizeShopId(payload.shopId) !== sid) {
       db.licenseActive = false;
       db.vault.status = 'invalid';
       db.vault.note = 'license ไม่ตรงร้านนี้';
       return { valid: false, message: 'license ไม่ตรงร้านนี้' };
     }
-    if ((payload.installRef && payload.installRef !== refs.installRef) || (payload.softRef && payload.softRef !== refs.softRef)) {
-      db.licenseActive = false;
-      db.vault.status = 'invalid';
-      db.vault.note = 'license ไม่ตรงกับอุปกรณ์นี้';
-      return { valid: false, message: 'license ไม่ตรงกับอุปกรณ์นี้' };
-    }
-
     if (Number(payload.exp || 0) > 0 && now() > Number(payload.exp)) {
       db.licenseActive = false;
       db.vault.status = 'expired';
@@ -338,8 +349,8 @@
     db.shopId = sid;
     db.licenseToken = String(license.raw || '');
     db.licenseActive = true;
-    db.vault.installRef = refs.installRef;
-    db.vault.softRef = refs.softRef;
+    db.vault.installRef = '';
+    db.vault.softRef = '';
     db.vault.activatedAt = license.activatedAt || now();
     db.vault.lastValidatedAt = now();
     db.vault.status = 'active';
@@ -348,7 +359,7 @@
     db.vault.keyRef = String(payload.keyRef || 'offline-signature');
     db.vault.plan = String(payload.plan || 'pro-lifetime');
 
-    saveLicense({ ...license, lastValidatedAt: db.vault.lastValidatedAt, note: db.vault.note });
+    await saveLicense({ ...license, lastValidatedAt: db.vault.lastValidatedAt, note: db.vault.note });
     return { valid: true, message: db.vault.note, payload: clone(payload) };
   }
 
@@ -368,7 +379,6 @@
   async function activateWithGenkey(genkey, { shopId = '', deviceId = '', db = {} } = {}) {
     ensureDbShape(db);
     const sid = await ensureShopId(db, shopId);
-    const refs = await buildBindingRefs(sid, deviceId);
     const parsed = parseGenkey(genkey);
     if (!parsed.ok) return { valid: false, message: parsed.message };
     const { raw, payloadEncoded, signatureEncoded } = parsed;
@@ -387,12 +397,10 @@
     if (!sigCheck.ok) return { valid: false, message: sigCheck.message };
 
     if (normalizeShopId(payload.shopId) !== sid) return { valid: false, message: 'GENKEY ไม่ตรงร้านนี้' };
-    if (payload.installRef && String(payload.installRef || '') !== refs.installRef) return { valid: false, message: 'GENKEY ไม่ตรงอุปกรณ์นี้' };
-    if (payload.softRef && String(payload.softRef || '') !== refs.softRef) return { valid: false, message: 'GENKEY ไม่ตรงสภาพแวดล้อมอุปกรณ์' };
     if (Number(payload.exp || 0) > 0 && now() > Number(payload.exp)) return { valid: false, message: 'GENKEY หมดอายุแล้ว' };
 
     const activatedAt = now();
-    saveLicense({
+    await saveLicense({
       raw,
       payload,
       payloadEncoded,
@@ -405,8 +413,8 @@
     db.shopId = sid;
     db.licenseToken = raw;
     db.licenseActive = true;
-    db.vault.installRef = refs.installRef;
-    db.vault.softRef = refs.softRef;
+    db.vault.installRef = '';
+    db.vault.softRef = '';
     db.vault.activatedAt = activatedAt;
     db.vault.lastValidatedAt = activatedAt;
     db.vault.status = 'active';
@@ -427,6 +435,7 @@
       status: 'idle', note: '', licenseId: '', keyRef: '', plan: 'basic'
     };
     localStorage.removeItem(LS_STORED_LICENSE);
+    await kvSet(IDB_KEY_STORED_LICENSE, null);
     setVaultState({
       shopId: db.shopId || '', installRef: '', softRef: '', activatedAt: null, lastValidatedAt: null,
       status: 'idle', note: '', licenseId: '', keyRef: '', plan: 'basic'
@@ -482,7 +491,7 @@
       licenseToken: String(db.licenseToken || ''),
       licenseActive: Boolean(db.licenseActive),
       vault: clone(db.vault || {}),
-      storedLicense: loadLicense()
+      storedLicense: await loadLicense()
     };
     return {
       ok: true,
@@ -500,7 +509,7 @@
     db.licenseToken = '';
     db.licenseActive = false;
     if (parsed.vault && typeof parsed.vault === 'object') db.vault = { ...db.vault, ...clone(parsed.vault) };
-    if (parsed.storedLicense && typeof parsed.storedLicense === 'object') saveLicense(parsed.storedLicense);
+    if (parsed.storedLicense && typeof parsed.storedLicense === 'object') await saveLicense(parsed.storedLicense);
     localStorage.setItem(LS_LAST_SHOP_ID, db.shopId || '');
     const check = await verifyStoredLicense(db);
     if (!check.valid) await clearLicense(db);
@@ -513,7 +522,7 @@
     return {
       appVersion: APP_VERSION,
       shopId: sid,
-      licenseExists: Boolean(loadLicense()),
+      licenseExists: Boolean(await loadLicense()),
       licenseActive: Boolean(db.licenseActive),
       vault: clone(db.vault || {}),
       hasPublicKey: getConfiguredPublicKeyPem() !== PUBLIC_KEY_PEM_PLACEHOLDER
@@ -524,6 +533,7 @@
     APP_VERSION,
     normalizeShopId,
     getCurrentShopId,
+    setCurrentShopId,
     getOrCreateInstallId,
     getActivationRequest,
     getRequestCode,

@@ -14,6 +14,9 @@
 
 const fs = require('node:fs');
 const crypto = require('node:crypto');
+const PRIVATE_KEY_PLACEHOLDER = `-----BEGIN PRIVATE KEY-----
+REPLACE_WITH_REAL_PRIVATE_KEY
+-----END PRIVATE KEY-----`;
 
 function parseArgs(argv = process.argv.slice(2)) {
   const out = {};
@@ -50,6 +53,9 @@ function b64urlEncodeBytes(bytes) {
 }
 
 function loadPrivateKeyPem(args) {
+  if (args['use-placeholder']) {
+    return PRIVATE_KEY_PLACEHOLDER;
+  }
   if (args['private-key-file']) {
     return fs.readFileSync(String(args['private-key-file']), 'utf8').trim();
   }
