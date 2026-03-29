@@ -5,18 +5,16 @@
  * Owner-side only GENKEY generator.
  *
  * Usage:
- *   OWNER_PRIVATE_KEY_PEM="$(cat private_key.pem)" node tools/genkey.js --shopId SHOP-001
+ *   node tools/genkey.js --shopId SHOP-001 --privateKeyFile ./owner_private_key.pem
  *
  * Optional flags:
- *   --licenseId LIC-123
- *   --plan pro-lifetime
- *   --keyRef owner-rsa-2026
- *   --exp 0                    // unix ms; 0 = no expiry
+ *   --privateKey "<PEM text>"  // local input
  *   --app FAKDU
  *   --typ fakdu_license
  */
 
 const crypto = require('crypto');
+const fs = require('fs');
 
 function parseArgs(argv) {
   const out = {};
@@ -62,9 +60,19 @@ function fail(message) {
 
 (function main() {
   const args = parseArgs(process.argv);
-  const privateKeyPem = String(process.env.OWNER_PRIVATE_KEY_PEM || '').trim();
+  const privateKeyFromCli = String(args.privateKey || '').trim();
+  const privateKeyFile = String(args.privateKeyFile || args.privatekeyfile || '').trim();
+  const privateKeyFromEnv = String(process.env.OWNER_PRIVATE_KEY_PEM || '').trim();
+  let privateKeyPem = privateKeyFromCli || privateKeyFromEnv;
+  if (!privateKeyPem && privateKeyFile) {
+    try {
+      privateKeyPem = String(fs.readFileSync(privateKeyFile, 'utf8') || '').trim();
+    } catch (error) {
+      fail(`Cannot read --privateKeyFile: ${error.message}`);
+    }
+  }
   if (!privateKeyPem) {
-    fail('Missing OWNER_PRIVATE_KEY_PEM env var (owner secret key).');
+    fail('Missing private key. Use --privateKeyFile or --privateKey or OWNER_PRIVATE_KEY_PEM.');
   }
 
   const shopId = normalizeShopId(args.shopId || args.shopid || '');
@@ -77,11 +85,7 @@ function fail(message) {
     shopId,
     pro: true,
     lifetime: true,
-    plan: String(args.plan || 'pro-lifetime'),
-    licenseId: String(args.licenseId || `LIC-${shopId}-${now}`),
-    keyRef: String(args.keyRef || 'owner-rsa-sha256'),
-    iat: Number(args.iat || now),
-    exp: Number(args.exp || 0)
+    issuedAt: Number(args.issuedAt || now)
   };
 
   const payloadEncoded = b64urlEncodeUtf8(JSON.stringify(payload));
