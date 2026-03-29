@@ -1,6 +1,6 @@
 // sw.js - Service Worker (FAKDU v9.46)
 
-const SW_VERSION = '9.48.2';
+const SW_VERSION = '9.48.5';
 const CACHE_NAME = `fakdu-cache-v${SW_VERSION}`;
 const META_CACHE_NAME = `fakdu-cache-meta-v${SW_VERSION}`;
 const CACHE_MAX_AGE_MS = 60 * 24 * 60 * 60 * 1000;
