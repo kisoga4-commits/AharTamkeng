@@ -181,6 +181,10 @@ gc5p4OxooqzaYadsCa1k6wT6ib3c2LHIwKKN0Gy/e/goU2R6PDE57W3Qh/eNSQoT
       || fallback
       || ''
     );
+    if (!sid) {
+      const installId = await getOrCreateInstallId();
+      sid = `SHOP-${(await shortHash(`SID|${installId}|${APP_VERSION}`, 10)).toUpperCase()}`;
+    }
     if (db) db.shopId = sid;
     if (sid) {
       localStorage.setItem(LS_LAST_SHOP_ID, sid);
@@ -404,6 +408,13 @@ gc5p4OxooqzaYadsCa1k6wT6ib3c2LHIwKKN0Gy/e/goU2R6PDE57W3Qh/eNSQoT
     if (!sigCheck.ok) return { valid: false, message: sigCheck.message };
 
     if (normalizeShopId(payload.shopId) !== sid) return { valid: false, message: 'GENKEY ไม่ตรงร้านนี้' };
+    const refs = await buildBindingRefs(sid, deviceId);
+    if (payload.installRef && String(payload.installRef) !== refs.installRef) {
+      return { valid: false, message: 'GENKEY ไม่ตรงเครื่องนี้ (installRef)' };
+    }
+    if (payload.softRef && String(payload.softRef) !== refs.softRef) {
+      return { valid: false, message: 'GENKEY ไม่ตรงเครื่องนี้ (softRef)' };
+    }
     if (!Number.isFinite(Number(payload.issuedAt)) || Number(payload.issuedAt) <= 0) {
       return { valid: false, message: 'GENKEY ไม่มี issuedAt ที่ถูกต้อง' };
     }

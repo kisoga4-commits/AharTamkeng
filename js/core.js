@@ -2019,13 +2019,8 @@
   async function validateProKey() {
     const key = qs('pro-key-input')?.value?.trim() || '';
     if (!key) return showToast('กรอกรหัสปลดล็อกก่อน', 'error');
-    const shopInput = qs('pro-shop-id-input')?.value?.trim() || '';
     const vault = resolveVaultApi();
-    if (typeof vault.setCurrentShopId === 'function' && shopInput) {
-      const setResult = await vault.setCurrentShopId(shopInput, state.db);
-      if (!setResult?.ok) return showToast(setResult?.message || 'shopId ไม่ถูกต้อง', 'error');
-    }
-    if (!state.db.shopId) return showToast('กรุณากรอก Shop ID ก่อนปลดล็อก', 'error');
+    if (!state.db.shopId) return showToast('ไม่พบ Shop ID ของเครื่องนี้', 'error');
     let result = null;
     if (typeof vault.activateProKey === 'function') {
       try {
@@ -2080,13 +2075,30 @@
       } catch (_) {}
     }
     if (qs('display-hwid')) qs('display-hwid').textContent = state.db.shopId || '-';
-    const shopInput = qs('pro-shop-id-input');
-    if (shopInput) {
-      shopInput.value = state.db.shopId || '';
-      shopInput.readOnly = Boolean(state.db.shopId);
-      shopInput.placeholder = state.db.shopId ? 'Shop ID ถูกล็อกแล้ว' : 'กรอก Shop ID ครั้งแรก';
+    const requestBox = qs('pro-request-code');
+    if (requestBox) {
+      requestBox.value = '';
+      if (typeof vault.getRequestCode === 'function') {
+        try {
+          const req = await vault.getRequestCode({ shopId: state.db.shopId, deviceId: state.hwid, db: state.db });
+          requestBox.value = req?.requestCode || '';
+        } catch (_) {
+          requestBox.value = '';
+        }
+      }
     }
     openModal('modal-pro-unlock');
+  }
+
+  async function copyProRequestCode() {
+    const value = qs('pro-request-code')?.value?.trim() || '';
+    if (!value) return showToast('ยังไม่มี Request Code', 'error');
+    try {
+      await navigator.clipboard.writeText(value);
+      showToast('คัดลอก Request Code แล้ว', 'success');
+    } catch (_) {
+      showToast('คัดลอกไม่สำเร็จ', 'error');
+    }
   }
 
   function applyTrialUiGuards() {
@@ -3883,6 +3895,7 @@
     executeRecovery,
     validateProKey,
     openProModal,
+    copyProRequestCode,
     handleLockedFeatureClick,
     triggerSyncCheck,
     requestNewSyncKey,

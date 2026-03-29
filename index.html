@@ -467,7 +467,11 @@
                 <p class="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-2">Shop ID</p>
                 <span id="display-hwid" class="font-mono text-xl text-gray-800 font-black tracking-widest select-all">-</span>
             </div>
-            <input type="text" id="pro-shop-id-input" class="w-full border-2 p-4 rounded-2xl outline-none font-mono text-center text-base bg-white uppercase tracking-widest focus:border-gray-400 mb-3" placeholder="ยืนยัน Shop ID ครั้งแรก">
+            <div class="text-left p-4 bg-gray-50 rounded-2xl mb-3 border">
+                <p class="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-2">Request Code (ส่งให้ owner ออก GENKEY)</p>
+                <textarea id="pro-request-code" class="w-full border-2 p-3 rounded-xl outline-none font-mono text-[11px] bg-white mb-2" rows="3" readonly></textarea>
+                <button type="button" onclick="copyProRequestCode()" class="w-full bg-gray-800 text-white py-2.5 rounded-xl font-black text-xs">คัดลอก Request Code</button>
+            </div>
             <input type="text" id="pro-key-input" class="w-full border-2 p-5 rounded-2xl outline-none font-mono text-center text-xl bg-white uppercase tracking-widest focus:border-gray-400 mb-6" placeholder="วาง GENKEY ที่ได้รับ">
             <div class="flex flex-col gap-3">
                 <button onclick="validateProKey()" class="w-full theme-bg py-5 rounded-[22px] font-black shadow-lg text-lg active:scale-95">ปลดล็อคทันที 🚀</button>

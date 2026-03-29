@@ -5,7 +5,8 @@
  * Owner-side only GENKEY generator.
  *
  * Usage:
- *   node tools/genkey.js --shopId SHOP-001 --privateKeyFile ./owner_private_key.pem
+ *   node tools/genkey.js --requestCode FKDRQ1.xxxxx --privateKeyFile ./owner_private_key.pem
+ *   node tools/genkey.js --shopId SHOP-001 --installRef <24-hex> --softRef <24-hex> --privateKeyFile ./owner_private_key.pem
  *
  * Optional flags:
  *   --privateKey "<PEM text>"  // local input
@@ -53,6 +54,22 @@ function normalizeShopId(value = '') {
     .replace(/^-+|-+$/g, '');
 }
 
+function parseRequestCode(raw = '') {
+  const text = String(raw || '').trim();
+  if (!text) return null;
+  const [prefix, encoded] = text.split('.');
+  if (prefix !== 'FKDRQ1' || !encoded) return null;
+  try {
+    const normalized = encoded.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+    const decoded = Buffer.from(padded, 'base64').toString('utf8');
+    const payload = JSON.parse(decoded);
+    return payload && typeof payload === 'object' ? payload : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 function fail(message) {
   console.error(`❌ ${message}`);
   process.exit(1);
@@ -75,14 +92,21 @@ function fail(message) {
     fail('Missing private key. Use --privateKeyFile or --privateKey or OWNER_PRIVATE_KEY_PEM.');
   }
 
-  const shopId = normalizeShopId(args.shopId || args.shopid || '');
+  const requestPayload = parseRequestCode(args.requestCode || args.requestcode || '');
+  const shopId = normalizeShopId(args.shopId || args.shopid || requestPayload?.shopId || '');
   if (!shopId) fail('Missing or invalid --shopId.');
+  const installRef = String(args.installRef || args.installref || requestPayload?.installRef || '').trim();
+  const softRef = String(args.softRef || args.softref || requestPayload?.softRef || '').trim();
+  if (!installRef) fail('Missing installRef. Use --requestCode or --installRef.');
+  if (!softRef) fail('Missing softRef. Use --requestCode or --softRef.');
 
   const now = Date.now();
   const payload = {
     typ: String(args.typ || 'fakdu_license'),
     app: String(args.app || 'FAKDU').trim().toUpperCase(),
     shopId,
+    installRef,
+    softRef,
     pro: true,
     lifetime: true,
     issuedAt: Number(args.issuedAt || now)

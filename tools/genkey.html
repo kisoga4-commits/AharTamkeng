@@ -20,8 +20,15 @@
   <p class="muted">ใช้เฉพาะฝั่ง owner เท่านั้น • ทำงาน offline ได้ • ห้ามนำ Private Key ไปไว้ในแอปลูกค้า</p>
 
   <div class="card row">
+    <label>Request Code (FKDRQ1...)</label>
+    <textarea id="requestCode" placeholder="วางโค้ดคำขอจากแอป (แนะนำ)"></textarea>
+
     <label>Shop ID</label>
     <input id="shopId" placeholder="เช่น SHOP-ABC-001" />
+    <label>Install Ref</label>
+    <input id="installRef" placeholder="ค่าจาก request code" />
+    <label>Soft Ref</label>
+    <input id="softRef" placeholder="ค่าจาก request code" />
 
     <label>Private Key (PEM, PKCS#8)</label>
     <textarea id="privateKeyPem" placeholder="-----BEGIN PRIVATE KEY----- ..."></textarea>
@@ -57,6 +64,11 @@
     function b64urlEncodeUtf8(text = '') {
       return b64urlEncodeBytes(new TextEncoder().encode(String(text)));
     }
+    function b64urlDecodeUtf8(text = '') {
+      const normalized = String(text || '').replace(/-/g, '+').replace(/_/g, '/');
+      const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+      return decodeURIComponent(escape(atob(padded)));
+    }
 
     function pemToArrayBuffer(pem = '') {
       const base64 = String(pem)
@@ -81,10 +93,28 @@
 
     async function generateGenkey() {
       const status = document.getElementById('status');
-      const shopRaw = document.getElementById('shopId').value;
-      const shopId = normalizeShopId(shopRaw);
+      const requestCode = document.getElementById('requestCode').value.trim();
+      if (requestCode) {
+        try {
+          const [prefix, encoded] = requestCode.split('.');
+          if (prefix === 'FKDRQ1' && encoded) {
+            const decoded = JSON.parse(b64urlDecodeUtf8(encoded));
+            if (decoded?.shopId) document.getElementById('shopId').value = decoded.shopId;
+            if (decoded?.installRef) document.getElementById('installRef').value = decoded.installRef;
+            if (decoded?.softRef) document.getElementById('softRef').value = decoded.softRef;
+          }
+        } catch (_) {}
+      }
+
+      const shopId = normalizeShopId(document.getElementById('shopId').value);
+      const installRef = document.getElementById('installRef').value.trim();
+      const softRef = document.getElementById('softRef').value.trim();
       if (!shopId) {
         status.textContent = '❌ shopId ไม่ถูกต้อง';
+        return;
+      }
+      if (!installRef || !softRef) {
+        status.textContent = '❌ ต้องมี installRef และ softRef';
         return;
       }
       const pem = document.getElementById('privateKeyPem').value.trim();
@@ -97,6 +127,8 @@
         typ: 'fakdu_license',
         app: 'FAKDU',
         shopId,
+        installRef,
+        softRef,
         pro: true,
         lifetime: true,
         issuedAt: Date.now()
