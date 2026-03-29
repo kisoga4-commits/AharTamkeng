@@ -1009,6 +1009,9 @@
 
   function addToCartActual(item, addons = [], qty = 1) {
     if (!state.activeUnitId) return;
+    const safeQty = Math.max(1, Math.floor(Number(qty || 1)));
+    const unit = state.db.units.find((row) => row.id === Number(state.activeUnitId));
+    if (!unit) return showToast('ไม่พบโต๊ะ/คิวที่เลือก', 'error');
     const unitCart = state.db.carts[state.activeUnitId] || [];
     const addonNames = addons.map((addon) => addon.name).join(', ');
     const addonPrice = addons.reduce((sum, addon) => sum + Number(addon.price || 0), 0);
@@ -1016,7 +1019,7 @@
     const lineName = addonNames ? `${item.name} (${addonNames})` : item.name;
     const existing = unitCart.find((row) => row.name === lineName && row.price === linePrice);
     if (existing) {
-      existing.qty += qty;
+      existing.qty += safeQty;
       existing.total = existing.qty * existing.price;
     } else {
       unitCart.push({
@@ -1025,8 +1028,8 @@
         baseName: item.name,
         name: lineName,
         price: linePrice,
-        qty,
-        total: qty * linePrice,
+        qty: safeQty,
+        total: safeQty * linePrice,
         addons: clone(addons),
         createdAt: Date.now()
       });
@@ -1065,6 +1068,7 @@
 
   function openReviewCartModal() {
     const cart = state.activeUnitId ? (state.db.carts[state.activeUnitId] || []) : [];
+    if (!state.activeUnitId) return showToast('กรุณาเลือกโต๊ะ/คิวก่อนส่งออร์เดอร์', 'error');
     if (!cart.length) return showToast('ตะกร้าว่าง', 'error');
     if (qs('review-unit-id')) qs('review-unit-id').textContent = String(state.activeUnitId);
     const list = qs('review-list');
@@ -1084,7 +1088,7 @@
         </div>
       `).join('');
     }
-    const total = cart.reduce((sum, row) => sum + row.total, 0);
+    const total = cart.reduce((sum, row) => sum + Number(row.total || 0), 0);
     if (qs('review-total-price')) qs('review-total-price').textContent = formatMoney(total);
     openModal('modal-review');
   }
@@ -1109,6 +1113,16 @@
     const unit = state.db.units.find((row) => row.id === Number(state.activeUnitId));
     const cart = state.db.carts[state.activeUnitId] || [];
     if (!unit || !cart.length) return showToast('ไม่มีรายการส่ง', 'error');
+    if (!Array.isArray(unit.orders)) unit.orders = [];
+    const safeCart = cart
+      .map((row) => ({
+        ...row,
+        qty: Math.max(1, Math.floor(Number(row.qty || 1))),
+        price: Number(row.price || 0),
+        total: Number(row.total || (Number(row.qty || 1) * Number(row.price || 0)))
+      }))
+      .filter((row) => row.qty > 0 && row.price >= 0);
+    if (!safeCart.length) return showToast('รายการในตะกร้าไม่ถูกต้อง', 'error');
     if (IS_CLIENT_NODE) {
       const session = getStoredClientSession();
       if (!session?.clientSessionToken) return showToast('ยังไม่ได้รับสิทธิ์จากเครื่องหลัก', 'error');
@@ -1122,7 +1136,7 @@
         clientSessionToken: session.clientSessionToken,
         profileName: profile.profileName,
         unitId: state.activeUnitId,
-        items: clone(cart)
+        items: clone(safeCart)
       };
       await enqueueClientOp(action);
       await flushClientOpQueue();
@@ -1143,7 +1157,7 @@
     unit.checkoutRequestedAt = null;
     unit.lastOrderBy = 'Master';
 
-    cart.forEach((row) => {
+    safeCart.forEach((row) => {
       const copy = {
         id: `ORD-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         itemId: row.itemId,
@@ -1161,7 +1175,7 @@
       unit.newItemsQty += row.qty;
     });
 
-    logOperation('SEND_ORDER', { unitId: state.activeUnitId, lines: clone(cart) });
+    logOperation('SEND_ORDER', { unitId: state.activeUnitId, lines: clone(safeCart) });
     state.db.carts[state.activeUnitId] = [];
     closeModal('modal-review');
     renderOrderedItemsBar(unit);
@@ -1776,11 +1790,14 @@
   }
 
   function openMenuModal(itemId = null) {
+    if (!canManageOrders()) return showToast('ต้องเข้าโหมดแอดมินก่อนจัดการเมนู', 'error');
     state.tempAddons = [];
     state.tempImg = '';
     if (qs('form-menu-id')) qs('form-menu-id').value = '';
     if (qs('form-menu-name')) qs('form-menu-name').value = '';
     if (qs('form-menu-price')) qs('form-menu-price').value = '';
+    if (qs('form-menu-file')) qs('form-menu-file').value = '';
+    if (qs('form-menu-camera')) qs('form-menu-camera').value = '';
     if (qs('form-menu-preview')) {
       qs('form-menu-preview').classList.add('hidden');
       qs('form-menu-preview').src = '';
@@ -1844,7 +1861,8 @@
     if (!canManageOrders()) return showToast('ต้องเข้าโหมดแอดมินก่อนบันทึกเมนู', 'error');
     const id = qs('form-menu-id')?.value?.trim();
     const name = qs('form-menu-name')?.value?.trim();
-    const price = Number(qs('form-menu-price')?.value || 0);
+    const rawPrice = String(qs('form-menu-price')?.value || '').replace(/,/g, '').trim();
+    const price = Number(rawPrice || 0);
     if (!name || price <= 0) return showToast('กรอกชื่อและราคาก่อน', 'error');
     const addons = state.tempAddons.filter((addon) => addon.name?.trim()).map((addon) => ({
       name: addon.name.trim(),
@@ -1887,12 +1905,15 @@
     }
     state.tempAddons = [];
     state.tempImg = '';
+    if (qs('form-menu-file')) qs('form-menu-file').value = '';
+    if (qs('form-menu-camera')) qs('form-menu-camera').value = '';
     saveDb({ render: true, sync: true });
     setTimeout(() => closeModal('modal-menu-form'), 0);
     showToast('บันทึกเมนูแล้ว', 'success');
   }
 
   function deleteItem(itemId) {
+    if (!canManageOrders()) return showToast('ต้องเข้าโหมดแอดมินก่อนลบเมนู', 'error');
     if (!confirm('ลบเมนูนี้ใช่ไหม?')) return;
     state.db.items = state.db.items.filter((row) => String(row.id) !== String(itemId));
     logOperation('DELETE_MENU_ITEM', { itemId });
@@ -1901,6 +1922,7 @@
   }
 
   function updateUnits() {
+    if (!canManageOrders()) return showToast('ต้องเข้าโหมดแอดมินก่อนอัปเดตโต๊ะ/คิว', 'error');
     const parsed = Number(qs('config-unit-count')?.value || state.db.unitCount || 4);
     const safeParsed = Number.isFinite(parsed) ? parsed : Number(state.db.unitCount || 4);
     const rawCount = Math.min(200, Math.max(1, Math.floor(safeParsed)));
@@ -1969,6 +1991,16 @@
   function handleImage(event, type) {
     const file = event?.target?.files?.[0];
     if (!file) return;
+    if (!String(file.type || '').startsWith('image/')) {
+      showToast('ไฟล์นี้ไม่ใช่รูปภาพ', 'error');
+      event.target.value = '';
+      return;
+    }
+    if (file.size > 4 * 1024 * 1024) {
+      showToast('รูปใหญ่เกินไป (ไม่เกิน 4MB)', 'error');
+      event.target.value = '';
+      return;
+    }
     const reader = new FileReader();
     reader.onload = (e) => {
       const result = e.target?.result || '';
@@ -1991,6 +2023,7 @@
           qs('form-menu-preview').src = result;
           qs('form-menu-preview').classList.remove('hidden');
         }
+        showToast('เพิ่มรูปเมนูแล้ว', 'success');
       }
     };
     reader.readAsDataURL(file);
