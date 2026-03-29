@@ -185,9 +185,12 @@
   function toPromptPayTarget(raw = '') {
     const digits = String(raw || '').replace(/\D/g, '');
     if (digits.length === 10 && digits.startsWith('0')) {
-      return `0066${digits.slice(1)}`;
+      return { type: '01', value: `0066${digits.slice(1)}` }; // mobile
     }
-    return digits;
+    if (digits.length === 13) {
+      return { type: '02', value: digits }; // national id / tax id
+    }
+    return null;
   }
   function emvField(id, value) {
     const text = String(value ?? '');
@@ -208,8 +211,8 @@
     const target = toPromptPayTarget(ppay);
     if (!target) return '';
     const amountNum = Number(amount || 0);
-    const amountText = amountNum > 0 ? amountNum.toFixed(2) : '';
-    const merchantInfo = emvField('29', `${emvField('00', 'A000000677010111')}${emvField('01', target)}`);
+    const amountText = Number.isFinite(amountNum) && amountNum > 0 ? amountNum.toFixed(2) : '';
+    const merchantInfo = emvField('29', `${emvField('00', 'A000000677010111')}${emvField(target.type, target.value)}`);
     const safeName = String(shopName || 'FAKDU').trim().slice(0, 25) || 'FAKDU';
     let payload = '';
     payload += emvField('00', '01');
@@ -223,6 +226,32 @@
     payload += emvField('60', 'BANGKOK');
     const crcBase = `${payload}6304`;
     return `${crcBase}${crc16Ccitt(crcBase)}`;
+  }
+  function generatePromptPayQrCanvas(promptPayID, amount = 0, options = {}) {
+    const payload = buildPromptPayPayload(promptPayID, amount, options.shopName || 'FAKDU');
+    if (!payload || typeof QRCode !== 'function') return null;
+    const wrapper = document.createElement('div');
+    new QRCode(wrapper, {
+      text: payload,
+      width: Number(options.width || 150),
+      height: Number(options.height || 150)
+    });
+    const canvas = wrapper.querySelector('canvas');
+    if (canvas) return canvas;
+    const img = wrapper.querySelector('img');
+    if (!img) return null;
+    const fallbackCanvas = document.createElement('canvas');
+    const w = Number(options.width || 150);
+    const h = Number(options.height || 150);
+    fallbackCanvas.width = w;
+    fallbackCanvas.height = h;
+    const ctx = fallbackCanvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, w, h);
+    if (img.complete) ctx.drawImage(img, 0, 0, w, h);
+    else img.onload = () => ctx.drawImage(img, 0, 0, w, h);
+    return fallbackCanvas;
   }
   function isTransferMethod(method = '') {
     const value = String(method || '').toLowerCase();
@@ -1335,12 +1364,13 @@
     status.textContent = '';
 
     const payload = buildPromptPayPayload(state.db.ppay, state.currentCheckoutTotal, state.db.shopName);
-    if (typeof QRCode === 'function' && payload) {
-      new QRCode(genArea, {
-        text: payload,
-        width: 150,
-        height: 150
-      });
+    const qrCanvas = generatePromptPayQrCanvas(state.db.ppay, state.currentCheckoutTotal, {
+      width: 150,
+      height: 150,
+      shopName: state.db.shopName
+    });
+    if (qrCanvas && payload) {
+      genArea.appendChild(qrCanvas);
       status.textContent = `${state.db.bank || 'พร้อมเพย์'} • ${state.db.ppay}`;
       return;
     }
