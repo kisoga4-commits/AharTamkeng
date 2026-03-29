@@ -328,20 +328,8 @@
     return `MSG-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 10).toUpperCase()}`;
   }
   function resolveFirebaseSyncApi() {
-    if (state.firebaseSyncApi) return state.firebaseSyncApi;
-    const factory = window.FakduSync && typeof window.FakduSync.resolveApi === 'function'
-      ? window.FakduSync.resolveApi
-      : (window.FakduFirebaseSync && typeof window.FakduFirebaseSync.resolveApi === 'function'
-        ? window.FakduFirebaseSync.resolveApi
-        : null);
-    if (!factory) return null;
-    try {
-      state.firebaseSyncApi = factory();
-      return state.firebaseSyncApi;
-    } catch (error) {
-      console.warn('Firebase sync unavailable', error);
-      return null;
-    }
+    // โหมดออฟไลน์ล้วน: ปิดการเชื่อมต่อ cloud/server ทั้งหมด
+    return null;
   }
   function getClientStatus(client) {
     if (!client) return 'offline';
