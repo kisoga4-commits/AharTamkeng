@@ -5,6 +5,11 @@ const CACHE_NAME = `fakdu-cache-v${SW_VERSION}`;
 const META_CACHE_NAME = `fakdu-cache-meta-v${SW_VERSION}`;
 const CACHE_MAX_AGE_MS = 60 * 24 * 60 * 60 * 1000;
 let lastCleanupAt = 0;
+const EXTERNAL_CACHE_HOSTS = new Set([
+  'cdn.tailwindcss.com',
+  'fonts.googleapis.com',
+  'fonts.gstatic.com'
+]);
 
 const ASSETS_TO_CACHE = [
   './',
@@ -80,7 +85,9 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
 
   const requestUrl = new URL(event.request.url);
-  if (requestUrl.origin !== self.location.origin) return;
+  const isSameOrigin = requestUrl.origin === self.location.origin;
+  const isAllowedExternal = EXTERNAL_CACHE_HOSTS.has(requestUrl.hostname);
+  if (!isSameOrigin && !isAllowedExternal) return;
   if ((Date.now() - lastCleanupAt) > (12 * 60 * 60 * 1000)) {
     lastCleanupAt = Date.now();
     event.waitUntil(cleanupExpiredCacheEntries().catch(() => {}));
@@ -90,7 +97,7 @@ self.addEventListener('fetch', (event) => {
     const cached = await caches.match(event.request);
     const isNavigation = event.request.mode === 'navigate';
 
-    if (isNavigation) {
+    if (isNavigation && isSameOrigin) {
       if (cached) return cached;
       try {
         const networkResponse = await fetch(event.request);
@@ -114,11 +121,17 @@ self.addEventListener('fetch', (event) => {
 
     if (cached) return cached;
     try {
-      const response = await fetch(event.request);
-      if (response && response.status === 200 && response.type === 'basic') {
+      const networkRequest = (!isSameOrigin && isAllowedExternal)
+        ? new Request(event.request, { mode: 'no-cors' })
+        : event.request;
+      const response = await fetch(networkRequest);
+      const canCache = isSameOrigin
+        ? (response && response.status === 200 && response.type === 'basic')
+        : (response && (response.status === 0 || response.type === 'opaque' || response.status === 200));
+      if (canCache) {
         const cache = await caches.open(CACHE_NAME);
-        await cache.put(event.request, response.clone());
-        stampCacheEntry(event.request).catch(() => {});
+        await cache.put(networkRequest, response.clone());
+        stampCacheEntry(networkRequest).catch(() => {});
       }
       return response;
     } catch (_) {
