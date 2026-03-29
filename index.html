@@ -229,21 +229,6 @@
             <button onclick="adminLogout()" class="bg-red-50 text-red-600 border border-red-100 px-5 py-2 rounded-full font-black text-[11px] active:scale-95">🔒 ล็อคแอดมิน</button>
         </div>
 
-        <div id="pro-recovery-setup" class="bg-indigo-50 border-2 border-indigo-200 p-6 rounded-[28px] mb-6 shadow-sm">
-            <div class="flex items-center justify-between gap-3 mb-3">
-                <div>
-                    <h3 class="font-black text-indigo-800 text-sm mb-1">🛡️ ข้อมูลช่วยจำสำหรับลืมรหัส</h3>
-                    <p class="text-[10px] text-indigo-500 font-bold">เลือก 7 สี + 20 สัตว์ เพื่อใช้ยืนยันสิทธิ์ก่อนรีเซ็ต PIN</p>
-                </div>
-                <button onclick="openModal('modal-recovery-setup')" class="bg-white text-indigo-700 border border-indigo-200 px-4 py-2 rounded-xl text-[11px] font-black active:scale-95">ตั้งค่า</button>
-            </div>
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-[11px] font-bold text-gray-600">
-                <div class="bg-white rounded-xl p-3 border">เบอร์ช่วยจำ<br><span id="recovery-phone-state" class="text-indigo-700 font-black">ยังไม่ตั้งค่า</span></div>
-                <div class="bg-white rounded-xl p-3 border">สีที่ชอบ<br><span id="recovery-color-state" class="text-indigo-700 font-black">ยังไม่ตั้งค่า</span></div>
-                <div class="bg-white rounded-xl p-3 border">สัตว์ที่ชอบ<br><span id="recovery-animal-state" class="text-indigo-700 font-black">ยังไม่ตั้งค่า</span></div>
-            </div>
-        </div>
-
         <div class="bg-white p-6 rounded-[28px] border shadow-sm mb-6">
             <label class="text-[12px] text-gray-400 font-bold uppercase tracking-widest mb-4 block">ข้อมูลร้านค้า</label>
             <div class="flex items-center gap-5 mb-6">
@@ -459,13 +444,14 @@
             </div>
             <div class="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 mb-4 text-left">
                 <p class="text-[10px] text-emerald-700 font-black uppercase tracking-widest mb-1">ราคาโปร</p>
-                <p class="text-2xl font-black text-emerald-800 tracking-tight">XXX-</p>
-                <p class="text-[11px] text-emerald-700/80 font-bold mt-1">* ใส่ราคาเองได้จากโค้ดบรรทัดนี้</p>
+                <p class="text-2xl font-black text-emerald-800 tracking-tight">499- จาก XXX</p>
+                <p class="text-[11px] text-emerald-700/80 font-bold mt-1">* ปรับข้อความราคาได้จากโค้ดบรรทัดนี้</p>
             </div>
             <a href="https://line.me/" target="_blank" rel="noopener noreferrer" class="block w-full mb-4 bg-[#06C755] text-white py-3.5 rounded-2xl font-black text-sm shadow-md active:scale-95">ติดต่อทาง LINE เพื่อซื้อแพ็กเกจ</a>
             <div class="text-center p-4 bg-gray-50 rounded-2xl mb-6 border">
                 <p class="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-2">SHOP ID ปลดล็อค</p>
                 <span id="display-hwid" class="font-mono text-xl text-gray-800 font-black tracking-widest select-all">XXX</span>
+                <button onclick="copyUnlockShopId()" class="mt-3 w-full bg-white border border-gray-200 text-gray-700 py-2 rounded-xl text-[11px] font-black active:scale-95">คัดลอก SHOP ID</button>
             </div>
             <input type="text" id="pro-key-input" class="w-full border-2 p-5 rounded-2xl outline-none font-mono text-center text-xl bg-white uppercase tracking-widest focus:border-gray-400 mb-6" placeholder="รหัสปลดล็อค">
             <div class="flex flex-col gap-3">
@@ -596,27 +582,5 @@
     <script src="js/core.js"></script>
 </div>
 
-    <script>
-      document.addEventListener('DOMContentLoaded', () => {
-        const mapIds = [
-          ['recovery-phone-state','recovery-phone-state-2'],
-          ['recovery-color-state','recovery-color-state-2'],
-          ['recovery-animal-state','recovery-animal-state-2']
-        ];
-        const syncMirror = () => {
-          mapIds.forEach(([a,b]) => {
-            const src = document.getElementById(a);
-            const dst = document.getElementById(b);
-            if (src && dst) dst.textContent = src.textContent || 'ยังไม่ตั้งค่า';
-          });
-        };
-        syncMirror();
-        const obs = new MutationObserver(syncMirror);
-        mapIds.forEach(([a]) => {
-          const src = document.getElementById(a);
-          if (src) obs.observe(src, { childList: true, subtree: true, characterData: true });
-        });
-      });
-    </script>
 </body>
 </html>

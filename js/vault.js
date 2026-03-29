@@ -8,7 +8,7 @@
   const LS_LAST_LICENSE = 'FAKDU_VAULT_LAST_LICENSE_V1020';
   const LS_ACTIVATION_CACHE = 'FAKDU_VAULT_ACTIVATION_CACHE_V1020';
 
-   Placeholder/config key only. Real signing secret must stay on owner/server side.
+  // Placeholder/config key only. Real signing secret must stay on owner/server side.
   const VAULT_SECRET_CONFIG_NAME = 'FAKDU_VAULT_MASTER_SECRET';
 
 
@@ -55,7 +55,7 @@
   function getConfiguredVaultSecretName() {
     const configured = String(window?.[VAULT_SECRET_CONFIG_NAME] || '').trim();
     return configured || VAULT_SECRET_CONFIG_NAME;
-
+  }
 
 
   function ensureDbShape(db) {
@@ -79,7 +79,8 @@
         note: '',
         licenseId: '',
         keyRef: '',
-        plan: 'basic'
+        payload: null,
+        signature: ''
       };
     }
 
@@ -113,6 +114,20 @@
     return (await sha256Hex(message)).slice(0, len);
   }
 
+  async function buildVaultSignature({ sid = '', iat = 0, ref = '' } = {}) {
+    const secretName = getConfiguredVaultSecretName();
+    return sha256Hex(`${sid}|${iat}|${ref}|${secretName}|${APP_VERSION}`);
+  }
+
+  async function makeVaultPayload({ sid = '', ref = '' } = {}) {
+    const iat = now();
+    return {
+      sid: normalizeShopId(sid),
+      iat,
+      ref: String(ref || '')
+    };
+  }
+
   function parseShopIdFromGenkey(key = '') {
     const raw = String(key || '').trim();
     const parts = raw.split('.');
@@ -139,7 +154,8 @@
       note: '',
       licenseId: '',
       keyRef: '',
-      plan: 'basic'
+      payload: null,
+      signature: ''
     });
   }
 
@@ -214,14 +230,9 @@
     const sid = await ensureShopId({ ...db, shopId });
     const refs = await buildBindingRefs(sid, deviceId);
     const request = {
-      kind: 'activation_request',
-      appVersion: APP_VERSION,
-      shopId: sid,
-      installId: refs.installId,
-      installRef: refs.installRef,
-      softRef: refs.softRef,
-      requestedAt: now(),
-      note: 'Activation must be verified online by owner/server.'
+      sid,
+      iat: now(),
+      ref: refs.installRef
     };
     return { ok: true, request, printable: JSON.stringify(request, null, 2) };
   }
@@ -268,7 +279,7 @@
         message: result.message || 'ยืนยัน GENKEY สำเร็จ',
         shopId: normalizeShopId(result.shopId || sid),
         keyRef: String(result.keyRef || ''),
-        plan: String(result.plan || 'pro')
+        metadata: clone(result.metadata || {})
       };
     } catch (_) {
       return { valid: false, message: 'เชื่อมต่อเซิร์ฟเวอร์ยืนยัน GENKEY ไม่สำเร็จ' };
@@ -307,10 +318,7 @@
         valid: true,
         message: result.message || 'license ใช้งานได้',
         shopId: normalizeShopId(result.shopId || sid),
-        payload: {
-          licenseId: String(result.licenseId || ''),
-          plan: String(result.plan || 'pro')
-        }
+        payload: { licenseId: String(result.licenseId || '') }
       };
     } catch (_) {
       return { valid: false, message: 'ตรวจสอบ license กับเซิร์ฟเวอร์ไม่สำเร็จ' };
@@ -324,13 +332,11 @@
     const refs = await buildBindingRefs(sid, deviceId);
 
     if (!navigator.onLine) {
-      db.licenseActive = false;
       return { valid: false, message: 'การ Activate ต้องออนไลน์เท่านั้น' };
     }
 
     const api = getLicenseApi();
     if (!api || typeof api.activateOnline !== 'function') {
-      db.licenseActive = false;
       return { valid: false, message: 'ยังไม่ได้ตั้งค่า License API ฝั่งเซิร์ฟเวอร์' };
     }
 
@@ -345,18 +351,17 @@
       });
 
       if (!activated || activated.valid !== true) {
-        db.licenseActive = false;
         return { valid: false, message: activated?.message || 'เปิดสิทธิ์ไม่สำเร็จ' };
       }
 
       const resolvedShopId = normalizeShopId(activated.shopId || sid);
       const token = String(activated.token || key).trim();
       const licenseId = String(activated.licenseId || `LIC-${randomString(10)}`);
-      const plan = String(activated.plan || 'pro');
+      const payload = await makeVaultPayload({ sid: resolvedShopId, ref: refs.installRef });
+      const signature = await buildVaultSignature(payload);
 
       db.shopId = resolvedShopId;
       db.licenseToken = token;
-      db.licenseActive = true;
       db.vault.installRef = refs.installRef;
       db.vault.softRef = refs.softRef;
       db.vault.activatedAt = now();
@@ -365,7 +370,8 @@
       db.vault.note = activated.message || 'Activated online';
       db.vault.licenseId = licenseId;
       db.vault.keyRef = String(activated.keyRef || 'server');
-      db.vault.plan = plan;
+      db.vault.payload = payload;
+      db.vault.signature = signature;
 
       localStorage.setItem(LS_LAST_LICENSE, token);
       localStorage.setItem(LS_LAST_SHOP_ID, resolvedShopId);
@@ -387,12 +393,12 @@
         note: db.vault.note,
         licenseId,
         keyRef: db.vault.keyRef,
-        plan
+        payload,
+        signature
       });
 
-      return { valid: true, token, shopId: resolvedShopId, licenseId, plan, message: db.vault.note };
+      return { valid: true, token, shopId: resolvedShopId, licenseId, metadata: { payload, signature }, message: db.vault.note };
     } catch (_) {
-      db.licenseActive = false;
       return { valid: false, message: 'เชื่อมต่อเซิร์ฟเวอร์ activate ไม่สำเร็จ' };
     }
   }
@@ -413,7 +419,6 @@
 
     if (matchedCache) {
       db.licenseToken = token;
-      db.licenseActive = true;
       db.vault.status = 'active';
       db.vault.note = navigator.onLine ? 'Activated (online check optional)' : 'Activated (offline allowed)';
       db.vault.installRef = refs.installRef;
@@ -422,7 +427,6 @@
       return true;
     }
 
-    db.licenseActive = false;
     db.vault.status = 'invalid';
     db.vault.note = 'ยังไม่ผ่านการ activate ออนไลน์บนอุปกรณ์นี้';
     return false;
@@ -431,7 +435,6 @@
   async function clearLicense(db = {}) {
     ensureDbShape(db);
     db.licenseToken = '';
-    db.licenseActive = false;
     db.vault = {
       installRef: '',
       softRef: '',
@@ -441,7 +444,8 @@
       note: '',
       licenseId: '',
       keyRef: '',
-      plan: 'basic'
+      payload: null,
+      signature: ''
     };
 
     localStorage.removeItem(LS_LAST_LICENSE);
@@ -454,7 +458,8 @@
       lastValidatedAt: null,
       licenseId: '',
       keyRef: '',
-      plan: 'basic'
+      payload: null,
+      signature: ''
     });
 
     return { ok: true };
@@ -476,7 +481,6 @@
       exportedAt: new Date().toISOString(),
       shopId: db.shopId || localStorage.getItem(LS_LAST_SHOP_ID) || '',
       licenseToken: String(db.licenseToken || ''),
-      licenseActive: Boolean(db.licenseActive),
       vault: clone(db.vault || {}),
       activationCache: getActivationCache()
     };
@@ -495,7 +499,6 @@
 
     db.shopId = normalizeShopId(parsed.shopId || db.shopId || '');
     if (typeof parsed.licenseToken === 'string') db.licenseToken = parsed.licenseToken;
-    if (typeof parsed.licenseActive === 'boolean') db.licenseActive = parsed.licenseActive;
     if (parsed.vault && typeof parsed.vault === 'object') db.vault = { ...db.vault, ...clone(parsed.vault) };
 
     localStorage.setItem(LS_LAST_SHOP_ID, db.shopId || '');
@@ -505,11 +508,12 @@
     }
     setVaultState({
       shopId: db.shopId,
-      status: db.vault.status || (db.licenseActive ? 'active' : 'idle'),
+      status: db.vault.status || (db.licenseToken ? 'active' : 'idle'),
       note: db.vault.note || '',
       licenseId: db.vault.licenseId || '',
       keyRef: db.vault.keyRef || '',
-      plan: db.vault.plan || 'basic'
+      payload: clone(db.vault.payload || null),
+      signature: String(db.vault.signature || '')
     });
 
     return { ok: true, message: 'นำเข้าข้อมูล vault สำเร็จ' };
@@ -524,7 +528,7 @@
 
       shopId: sid,
       licenseExists: Boolean(String(db.licenseToken || '').trim()),
-      licenseActive: Boolean(db.licenseActive),
+      licenseActive: Boolean(db.vault?.status === 'active' && String(db.licenseToken || '').trim()),
       vault: clone(db.vault || {}),
       activationCache: getActivationCache()
     };
