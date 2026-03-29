@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = '10.23-firebase-license-check';
+  const APP_VERSION = '10.24-genkey-offline-skeleton';
   const LS_INSTALL_ID = 'FAKDU_VAULT_INSTALL_ID';
   const LS_SHOP_ID = 'FAKDU_VAULT_SHOP_ID';
   const LS_LICENSE = 'FAKDU_VAULT_GENKEY';
@@ -175,23 +175,82 @@
     return sid;
   }
 
-  async function waitFirebaseReady(timeoutMs = 4000) {
-    const startedAt = now();
-    while (now() - startedAt < timeoutMs) {
-      if (window.FakduFirebase && window.FakduFirebase.ready && window.FakduFirebase.app) {
-        return window.FakduFirebase;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 120));
-    }
-    throw new Error('Firebase ยังไม่พร้อมใช้งาน');
+  function parseGenkeyPayload(genkey = '') {
+    const raw = normalizeLicenseCode(genkey);
+    const parsed = safeJsonParse(raw, null);
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (!parsed.payload || typeof parsed.payload !== 'object') return null;
+    return parsed;
   }
 
-  function getRealtimeDbUrl(firebaseRuntime) {
-    const direct = String(firebaseRuntime?.app?.options?.databaseURL || '').trim();
-    if (direct) return direct.replace(/\/+$/, '');
-    const fromDb = String(firebaseRuntime?.db?.app?.options?.databaseURL || '').trim();
-    if (fromDb) return fromDb.replace(/\/+$/, '');
-    throw new Error('ไม่พบ databaseURL จาก firebase-init.js');
+  async function getRequestCode({ shopId = '', deviceId = '', db = {} } = {}) {
+    ensureDbShape(db);
+    const sid = getCurrentShopId({ db, shopId });
+    if (!sid) return { ok: false, message: 'ไม่พบ SHOP ID ของร้านนี้' };
+    const installId = await getInstallId(deviceId);
+    const request = {
+      type: 'fakdu_genkey_offline_request',
+      version: 1,
+      shopId: sid,
+      installId,
+      issuedAt: now(),
+      note: 'โค้ดคำขอสำหรับออก GENKEY offline (รอบนี้ยังไม่ตรวจลายเซ็นจริง)'
+    };
+    return { ok: true, request, printable: JSON.stringify(request, null, 2) };
+  }
+
+  async function activateWithGenkey(genkey = '', { shopId = '', deviceId = '', db = {} } = {}) {
+    ensureDbShape(db);
+    const sid = getCurrentShopId({ db, shopId });
+    if (!sid) return { valid: false, message: 'ไม่พบ SHOP ID ของร้านนี้' };
+    const installId = await getInstallId(deviceId);
+    const code = normalizeLicenseCode(genkey);
+    if (!code) return { valid: false, message: 'กรอกรหัสปลดล็อกก่อน' };
+
+    const parsed = parseGenkeyPayload(code);
+    if (!parsed) {
+      if (code.length < 6) return { valid: false, message: 'รหัสปลดล็อกไม่ถูกต้อง' };
+      return {
+        valid: true,
+        token: code,
+        payload: {
+          shopId: sid,
+          installId,
+          plan: 'pro',
+          features: ['all'],
+          source: 'legacy_offline'
+        },
+        message: 'เปิดใช้โหมด Offline ชั่วคราว (ยังไม่ตรวจลายเซ็น GENKEY)'
+      };
+    }
+
+    const payload = parsed.payload || {};
+    const payloadShopId = normalizeShopId(payload.shopId || '');
+    if (!payloadShopId) return { valid: false, message: 'GENKEY ไม่มี shopId' };
+    if (payloadShopId !== sid) return { valid: false, message: 'GENKEY ไม่ตรงกับ SHOP ID นี้' };
+
+    const payloadInstallId = String(payload.installId || '').trim();
+    if (payloadInstallId && payloadInstallId !== installId) {
+      return { valid: false, message: 'GENKEY ไม่ตรงกับอุปกรณ์นี้' };
+    }
+
+    const expiresAt = Number(payload.expiresAt || 0);
+    if (Number.isFinite(expiresAt) && expiresAt > 0 && now() > expiresAt) {
+      return { valid: false, message: 'GENKEY หมดอายุแล้ว' };
+    }
+
+    return {
+      valid: true,
+      token: code,
+      payload: {
+        shopId: payloadShopId,
+        installId: payloadInstallId || installId,
+        plan: String(payload.plan || 'pro'),
+        features: Array.isArray(payload.features) ? payload.features : ['all'],
+        source: 'genkey_offline'
+      },
+      message: 'ตรวจสอบ GENKEY (offline) สำเร็จ'
+    };
   }
 
   async function verifyLicenseDetail(inputCode = '', { db = {}, shopId = '' } = {}) {
@@ -205,46 +264,8 @@
       return { valid: false, message: 'กรอกรหัสปลดล็อกก่อน' };
     }
 
-    let firebaseRuntime;
-    try {
-      firebaseRuntime = await waitFirebaseReady();
-    } catch (_) {
-      return { valid: false, message: 'ระบบเชื่อม Firebase ยังไม่พร้อม' };
-    }
-
-    try {
-      const canUseSdk = typeof firebaseRuntime?.ref === 'function' && typeof firebaseRuntime?.get === 'function';
-      let licenseDoc = null;
-
-      if (canUseSdk) {
-        const licenseRef = firebaseRuntime.ref(firebaseRuntime.db, `licenses/${sid}`);
-        const snap = await firebaseRuntime.get(licenseRef);
-        licenseDoc = snap.exists() ? snap.val() : null;
-      } else {
-        const baseUrl = getRealtimeDbUrl(firebaseRuntime);
-        const pathShopId = encodeURIComponent(sid);
-        const response = await fetch(`${baseUrl}/licenses/${pathShopId}.json`, {
-          method: 'GET',
-          cache: 'no-store'
-        });
-        if (!response.ok) return { valid: false, message: 'อ่านข้อมูลใบอนุญาตไม่สำเร็จ' };
-        licenseDoc = await response.json();
-      }
-
-      if (!licenseDoc || typeof licenseDoc !== 'object') {
-        return { valid: false, message: `ไม่พบ license ของร้าน ${sid}` };
-      }
-      if (licenseDoc.active !== true) {
-        return { valid: false, message: 'license นี้ยังไม่ active' };
-      }
-      if (String(licenseDoc.licenseCode || '') !== code) {
-        return { valid: false, message: 'รหัสปลดล็อกไม่ถูกต้อง' };
-      }
-
-      return { valid: true, message: 'ตรวจสอบ license ผ่าน' };
-    } catch (_) {
-      return { valid: false, message: 'เกิดข้อผิดพลาดระหว่างตรวจสอบ license' };
-    }
+    const result = await activateWithGenkey(code, { db, shopId: sid });
+    return { valid: Boolean(result.valid), message: result.message || '' };
   }
 
   async function verifyLicense(inputCode = '', context = {}) {
@@ -260,7 +281,7 @@
     return false;
   }
 
-  async function checkLicenseFromRealtimeDb({ shopId = '', licenseCode = '' } = {}) {
+  async function checkLicenseFromRealtimeDb({ shopId = '', licenseCode = '', deviceId = '', db = {} } = {}) {
     const sid = getCurrentShopId({ shopId });
     const code = normalizeLicenseCode(licenseCode);
 
@@ -271,43 +292,19 @@
       return { valid: false, message: 'กรอกรหัส license ก่อน' };
     }
 
-    const verifyResult = await verifyLicenseDetail(code, { shopId: sid });
-    if (!verifyResult.valid) {
-      return { valid: false, message: verifyResult.message };
-    }
-
-    return {
-      valid: true,
-      token: code,
-      payload: {
-        shopId: sid,
-        active: true,
-        source: 'firebase_realtime_db'
-      },
-      message: 'ตรวจสอบ license ผ่าน'
-    };
+    return activateWithGenkey(code, { shopId: sid, deviceId, db });
   }
 
   async function getActivationRequest({ shopId = '', deviceId = '', db = {} } = {}) {
-    ensureDbShape(db);
-    const sid = getCurrentShopId({ db, shopId });
-    if (!sid) return { ok: false, message: 'ไม่พบ SHOP ID ของร้านนี้' };
-    const installId = await getInstallId(deviceId);
-    const request = {
-      type: 'fakdu_license_check',
-      shopId: sid,
-      installId,
-      note: 'ระบบนี้เช็กตรงจาก Firebase Realtime Database ที่ path licenses/{shopId}'
-    };
-    return { ok: true, request, printable: JSON.stringify(request, null, 2) };
+    return getRequestCode({ shopId, deviceId, db });
   }
 
   async function createGenKey() {
-    return { ok: false, message: 'ปิด GENKEY ชั่วคราว: ใช้การเช็กจาก Firebase Realtime Database แทน' };
+    return { ok: false, message: 'ยังไม่เปิดสร้าง GENKEY อัตโนมัติในแอป (รองรับเฉพาะ activate offline)' };
   }
 
   async function createLicenseToken() {
-    return { ok: false, message: 'ใช้ licenseCode จาก owner แล้วเช็กกับ Firebase โดยตรง' };
+    return { ok: false, message: 'ยกเลิก license token แบบ Firebase แล้ว ให้ใช้ GENKEY offline แทน' };
   }
 
   async function validateProKey({ key = '', shopId = '', deviceId = '', db = {} } = {}) {
@@ -320,7 +317,7 @@
     const installId = await getInstallId(deviceId);
     const code = normalizeLicenseCode(key);
 
-    const result = await checkLicenseFromRealtimeDb({ shopId: sid, licenseCode: code });
+    const result = await activateWithGenkey(code, { shopId: sid, deviceId: installId, db });
     if (!result.valid) {
       db.licenseActive = false;
       db.vault.installId = installId;
@@ -340,8 +337,8 @@
     db.vault.status = 'active';
     db.vault.note = result.message || 'license valid';
     db.vault.licenseId = sid;
-    db.vault.plan = 'pro';
-    db.vault.features = ['all'];
+    db.vault.plan = result?.payload?.plan || 'pro';
+    db.vault.features = Array.isArray(result?.payload?.features) ? result.payload.features : ['all'];
 
     localStorage.setItem(LS_LICENSE, code);
     saveProStatus(sid);
@@ -383,7 +380,7 @@
       db.vault.installId = installId;
       db.vault.lastValidatedAt = now();
       db.vault.status = 'active';
-      db.vault.note = 'โหลดสถานะ Pro จากเครื่องนี้ (ผ่านการรีเช็ก Firebase)';
+      db.vault.note = 'โหลดสถานะ Pro จากเครื่องนี้ (ผ่านการรีเช็กแบบ offline)';
       db.vault.licenseId = sid;
       db.vault.plan = 'pro';
       db.vault.features = ['all'];
@@ -400,7 +397,7 @@
       return false;
     }
 
-    const result = await checkLicenseFromRealtimeDb({ shopId: sid, licenseCode: code });
+    const result = await activateWithGenkey(code, { shopId: sid, deviceId: installId, db });
 
     db.vault.installId = installId;
     db.vault.lastValidatedAt = now();
@@ -418,8 +415,8 @@
     db.vault.status = 'active';
     db.vault.note = result.message || 'license valid';
     db.vault.licenseId = sid;
-    db.vault.plan = 'pro';
-    db.vault.features = ['all'];
+    db.vault.plan = result?.payload?.plan || 'pro';
+    db.vault.features = Array.isArray(result?.payload?.features) ? result.payload.features : ['all'];
     localStorage.setItem(LS_LICENSE, code);
     saveProStatus(sid);
     return true;
@@ -511,11 +508,13 @@
     getCurrentShopId,
     verifyLicense,
     getActivationRequest,
+    getRequestCode,
     createGenKey,
     createLicenseToken,
     validateProKey,
     validateLicenseToken,
     activateProKey,
+    activateWithGenkey,
     isProActive,
     clearLicense,
     verifyRecoveryAnswers,
