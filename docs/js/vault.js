@@ -8,6 +8,16 @@
   const LS_PRO_UNLOCKED = 'FAKDU_PRO_UNLOCKED';
   const LS_PRO_SHOP_ID = 'FAKDU_PRO_SHOP_ID';
 
+  function lsGet(key, fallback = '') {
+    try { return localStorage.getItem(key) ?? fallback; } catch (_) { return fallback; }
+  }
+  function lsSet(key, value) {
+    try { localStorage.setItem(key, value); return true; } catch (_) { return false; }
+  }
+  function lsRemove(key) {
+    try { localStorage.removeItem(key); return true; } catch (_) { return false; }
+  }
+
   function now() {
     return Date.now();
   }
@@ -53,20 +63,20 @@
   function saveProStatus(shopId = '') {
     const sid = normalizeShopId(shopId);
     if (!sid) return false;
-    localStorage.setItem(LS_PRO_UNLOCKED, 'true');
-    localStorage.setItem(LS_PRO_SHOP_ID, sid);
+    lsSet(LS_PRO_UNLOCKED, 'true');
+    lsSet(LS_PRO_SHOP_ID, sid);
     return true;
   }
 
   function clearProStatus() {
-    localStorage.removeItem(LS_PRO_UNLOCKED);
-    localStorage.removeItem(LS_PRO_SHOP_ID);
+    lsRemove(LS_PRO_UNLOCKED);
+    lsRemove(LS_PRO_SHOP_ID);
   }
 
   function loadProStatus(shopId = '') {
     const sid = normalizeShopId(shopId);
-    const unlocked = localStorage.getItem(LS_PRO_UNLOCKED) === 'true';
-    const storedShopId = normalizeShopId(localStorage.getItem(LS_PRO_SHOP_ID) || '');
+    const unlocked = lsGet(LS_PRO_UNLOCKED) === 'true';
+    const storedShopId = normalizeShopId(lsGet(LS_PRO_SHOP_ID) || '');
 
     if (!unlocked) return { unlocked: false, shopId: storedShopId };
     if (!storedShopId) {
@@ -81,8 +91,8 @@
   }
 
   async function initProStatus({ db = {}, shopId = '' } = {}) {
-    const proUnlocked = localStorage.getItem(LS_PRO_UNLOCKED) === 'true';
-    const proShopId = normalizeShopId(localStorage.getItem(LS_PRO_SHOP_ID) || '');
+    const proUnlocked = lsGet(LS_PRO_UNLOCKED) === 'true';
+    const proShopId = normalizeShopId(lsGet(LS_PRO_SHOP_ID) || '');
 
     if (!proUnlocked || !proShopId) return false;
 
@@ -90,7 +100,7 @@
       shopId
       || db?.shopId
       || getShopIdFromUnlockUi()
-      || localStorage.getItem(LS_SHOP_ID)
+      || lsGet(LS_SHOP_ID)
       || ''
     );
 
@@ -99,7 +109,7 @@
       return false;
     }
 
-    const currentLicenseCode = normalizeLicenseCode(db?.licenseToken || localStorage.getItem(LS_LICENSE) || '');
+    const currentLicenseCode = normalizeLicenseCode(db?.licenseToken || lsGet(LS_LICENSE) || '');
     if (!currentLicenseCode) {
       clearProStatus();
       return false;
@@ -145,14 +155,14 @@
   async function getInstallId(provided = '') {
     const direct = String(provided || '').trim();
     if (direct) {
-      localStorage.setItem(LS_INSTALL_ID, direct);
+      lsSet(LS_INSTALL_ID, direct);
       return direct;
     }
 
-    let installId = localStorage.getItem(LS_INSTALL_ID) || '';
+    let installId = lsGet(LS_INSTALL_ID) || '';
     if (!installId) {
       installId = `FDI-${randomString(8)}-${Date.now().toString(36).toUpperCase()}`;
-      localStorage.setItem(LS_INSTALL_ID, installId);
+      lsSet(LS_INSTALL_ID, installId);
     }
     return installId;
   }
@@ -168,10 +178,10 @@
       shopId
       || getShopIdFromUnlockUi()
       || db?.shopId
-      || localStorage.getItem(LS_SHOP_ID)
+      || lsGet(LS_SHOP_ID)
       || ''
     );
-    if (sid) localStorage.setItem(LS_SHOP_ID, sid);
+    if (sid) lsSet(LS_SHOP_ID, sid);
     return sid;
   }
 
@@ -340,7 +350,7 @@
     db.vault.plan = result?.payload?.plan || 'pro';
     db.vault.features = Array.isArray(result?.payload?.features) ? result.payload.features : ['all'];
 
-    localStorage.setItem(LS_LICENSE, code);
+    lsSet(LS_LICENSE, code);
     saveProStatus(sid);
 
     return {
@@ -386,7 +396,7 @@
       db.vault.features = ['all'];
       return true;
     }
-    const code = normalizeLicenseCode(db.licenseToken || localStorage.getItem(LS_LICENSE) || '');
+    const code = normalizeLicenseCode(db.licenseToken || lsGet(LS_LICENSE) || '');
 
     if (!code) {
       db.licenseActive = false;
@@ -417,7 +427,7 @@
     db.vault.licenseId = sid;
     db.vault.plan = result?.payload?.plan || 'pro';
     db.vault.features = Array.isArray(result?.payload?.features) ? result.payload.features : ['all'];
-    localStorage.setItem(LS_LICENSE, code);
+    lsSet(LS_LICENSE, code);
     saveProStatus(sid);
     return true;
   }
@@ -437,7 +447,7 @@
       features: []
     };
 
-    localStorage.removeItem(LS_LICENSE);
+    lsRemove(LS_LICENSE);
     clearProStatus();
     return { ok: true };
   }
@@ -456,7 +466,7 @@
     const payload = {
       appVersion: APP_VERSION,
       exportedAt: new Date().toISOString(),
-      shopId: db.shopId || localStorage.getItem(LS_SHOP_ID) || '',
+      shopId: db.shopId || lsGet(LS_SHOP_ID) || '',
       licenseToken: String(db.licenseToken || ''),
       licenseActive: Boolean(db.licenseActive),
       vault: clone(db.vault || {})
@@ -479,8 +489,8 @@
     if (typeof parsed.licenseActive === 'boolean') db.licenseActive = parsed.licenseActive;
     if (parsed.vault && typeof parsed.vault === 'object') db.vault = { ...db.vault, ...clone(parsed.vault) };
 
-    if (db.shopId) localStorage.setItem(LS_SHOP_ID, db.shopId);
-    if (db.licenseToken) localStorage.setItem(LS_LICENSE, db.licenseToken);
+    if (db.shopId) lsSet(LS_SHOP_ID, db.shopId);
+    if (db.licenseToken) lsSet(LS_LICENSE, db.licenseToken);
 
     return { ok: true, message: 'นำเข้าข้อมูล vault สำเร็จ' };
   }

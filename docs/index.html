@@ -14,6 +14,7 @@
 </head>
 <body>
 <div class="app-container min-h-screen">
+    <div id="startup-status-banner" class="hidden px-4 py-2 text-[11px] font-bold text-center bg-slate-900 text-slate-100"></div>
 
     <!--* install-banner open -->
     <div id="pwa-install-banner" class="hidden bg-blue-600 text-white w-full px-4 py-3 flex justify-between items-center shadow-md z-[100]">
@@ -586,15 +587,19 @@
 
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js').catch(err => console.log('SW Error:', err));
+                navigator.serviceWorker.register('./sw.js').catch((err) => {
+                    console.error('[FAKDU][BOOT] Service Worker register failed:', err);
+                });
             });
+        } else {
+            console.warn('[FAKDU][BOOT] Service Worker is not supported in this browser.');
         }
     </script>
 
-    <script src="js/db.js"></script>
-    <script src="js/vault.js"></script>
-    <script type="module" src="js/firebase-init.js"></script>
-    <script src="js/core.js"></script>
+    <script src="./js/db.js"></script>
+    <script src="./js/vault.js"></script>
+    <script src="./js/firebase-init.js"></script>
+    <script src="./js/core.js"></script>
 </div>
 
     <script>

@@ -168,6 +168,26 @@
   function qs(id) { return document.getElementById(id); }
   function clone(obj) { return JSON.parse(JSON.stringify(obj)); }
   function now() { return Date.now(); }
+  function bootLog(level = 'info', message = '', detail) {
+    const prefix = '[FAKDU][BOOT]';
+    if (level === 'error') console.error(prefix, message, detail || '');
+    else if (level === 'warn') console.warn(prefix, message, detail || '');
+    else console.info(prefix, message, detail || '');
+  }
+  function setStartupStatus(message = '', tone = 'loading') {
+    const el = qs('startup-status-banner');
+    if (!el) return;
+    const toneMap = {
+      loading: 'bg-slate-900 text-slate-100',
+      success: 'bg-emerald-700 text-white',
+      warning: 'bg-amber-600 text-white',
+      error: 'bg-red-700 text-white'
+    };
+    el.className = `px-4 py-2 text-[11px] font-bold text-center ${toneMap[tone] || toneMap.loading}`;
+    el.textContent = message || '';
+    if (!message) el.classList.add('hidden');
+    else el.classList.remove('hidden');
+  }
   function thaiDate(ts = Date.now()) {
     return new Date(ts).toLocaleString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   }
@@ -282,6 +302,57 @@
   function issueClientSessionToken({ shopId, clientId, syncVersion }) {
     const payload = `${shopId}|${clientId}|${syncVersion}|${Date.now()}|${Math.random().toString(36).slice(2, 10)}`;
     return `SESS-${hashLike(payload).padEnd(16, '0').slice(0, 16)}`;
+  }
+
+  async function runStartupSelfCheck() {
+    const report = { db: false, sw: false, cache: false, issues: [] };
+    try {
+      setStartupStatus('กำลังโหลดข้อมูลเครื่อง...', 'loading');
+      const dbApi = resolveDbApi();
+      if (typeof dbApi.healthCheck === 'function') {
+        const dbHealth = await dbApi.healthCheck();
+        report.db = Boolean(dbHealth?.ok);
+        if (!dbHealth?.ok) report.issues.push(`DB: ${dbHealth?.error || 'เปิดไม่สำเร็จ'}`);
+        bootLog(report.db ? 'info' : 'warn', 'DB health', dbHealth);
+      } else {
+        report.db = true;
+      }
+    } catch (error) {
+      report.issues.push(`DB: ${error?.message || String(error)}`);
+      bootLog('error', 'DB self-check failed', error);
+    }
+
+    try {
+      if ('serviceWorker' in navigator) {
+        const reg = await navigator.serviceWorker.getRegistration('./');
+        report.sw = Boolean(reg);
+      }
+      if (!report.sw) report.issues.push('SW: ยังไม่ active');
+    } catch (error) {
+      report.issues.push(`SW: ${error?.message || String(error)}`);
+      bootLog('warn', 'SW self-check failed', error);
+    }
+
+    try {
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        report.cache = keys.some((key) => key.startsWith('fakdu-app-shell-v'));
+      }
+      if (!report.cache) report.issues.push('Cache: app shell ยังไม่พร้อม');
+    } catch (error) {
+      report.issues.push(`Cache: ${error?.message || String(error)}`);
+      bootLog('warn', 'Cache self-check failed', error);
+    }
+
+    if (report.db && report.sw && report.cache) {
+      setStartupStatus('โหมดออฟไลน์พร้อมใช้งาน', 'success');
+      setTimeout(() => setStartupStatus('', 'loading'), 2800);
+    } else if (report.db) {
+      setStartupStatus('โหลดข้อมูลเครื่องแล้ว แต่ระบบออฟไลน์ยังตั้งค่าไม่ครบ', 'warning');
+    } else {
+      setStartupStatus('พบปัญหาการเริ่มต้นระบบ กรุณารีเฟรชอีกครั้ง', 'error');
+    }
+    return report;
   }
 
   function normalizeMenuItemForCloud(item = {}) {
@@ -3692,6 +3763,7 @@
   //* init open
   async function init() {
     try {
+      setStartupStatus('กำลังโหลดข้อมูลเครื่อง...', 'loading');
       if (!IS_CLIENT_NODE && localStorage.getItem(LS_FORCE_CLIENT_MODE) === 'true') {
         const lastSession = getStoredClientSession();
         if (lastSession?.clientSessionToken) {
@@ -3765,11 +3837,13 @@
       renderAnalytics();
       startLiveTimers();
       switchTab('customer', qs('tab-customer'));
+      await runStartupSelfCheck();
       if (!IS_CLIENT_NODE || isClientSessionValid()) {
         showToast('FAKDU พร้อมใช้งาน', 'success');
       }
     } catch (error) {
-      console.error(error);
+      bootLog('error', 'Init failed', error);
+      setStartupStatus('พบปัญหาการเริ่มต้นระบบ กรุณารีเฟรชอีกครั้ง', 'error');
       showToast('โหลดระบบไม่สำเร็จ', 'error');
     }
   }
