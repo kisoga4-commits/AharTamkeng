@@ -98,6 +98,7 @@
     currentAddonQty: 1,
     currentCheckoutTotal: 0,
     qrScanner: null,
+    menuCameraStream: null,
     deferredInstallPrompt: null,
     syncButtonResetTimer: null,
     syncChannel: null,
@@ -1797,7 +1798,7 @@
     if (qs('form-menu-name')) qs('form-menu-name').value = '';
     if (qs('form-menu-price')) qs('form-menu-price').value = '';
     if (qs('form-menu-file')) qs('form-menu-file').value = '';
-    if (qs('form-menu-camera')) qs('form-menu-camera').value = '';
+    closeMenuCamera();
     if (qs('form-menu-preview')) {
       qs('form-menu-preview').classList.add('hidden');
       qs('form-menu-preview').src = '';
@@ -1906,7 +1907,7 @@
     state.tempAddons = [];
     state.tempImg = '';
     if (qs('form-menu-file')) qs('form-menu-file').value = '';
-    if (qs('form-menu-camera')) qs('form-menu-camera').value = '';
+    closeMenuCamera();
     saveDb({ render: true, sync: true });
     setTimeout(() => closeModal('modal-menu-form'), 0);
     showToast('บันทึกเมนูแล้ว', 'success');
@@ -2027,6 +2028,68 @@
       }
     };
     reader.readAsDataURL(file);
+  }
+
+  async function openMenuCamera() {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      showToast('อุปกรณ์นี้ไม่รองรับโหมดกล้อง', 'error');
+      return;
+    }
+    const video = qs('menu-camera-video');
+    if (!video) return;
+    const hint = qs('menu-camera-hint');
+    try {
+      await closeMenuCamera(true);
+      openModal('modal-menu-camera');
+      if (hint) hint.textContent = 'กำลังเปิดกล้อง...';
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false
+      });
+      state.menuCameraStream = stream;
+      video.srcObject = stream;
+      await video.play().catch(() => {});
+      if (hint) hint.textContent = 'กล้องพร้อมใช้งาน กด "ถ่ายรูปใช้เลย"';
+    } catch (error) {
+      console.error(error);
+      if (hint) hint.textContent = 'เปิดกล้องไม่สำเร็จ';
+      showToast('เปิดกล้องไม่ได้', 'error');
+      closeMenuCamera();
+    }
+  }
+
+  async function closeMenuCamera(keepModal = false) {
+    const video = qs('menu-camera-video');
+    if (video) video.srcObject = null;
+    if (state.menuCameraStream) {
+      state.menuCameraStream.getTracks().forEach((track) => track.stop());
+    }
+    state.menuCameraStream = null;
+    if (!keepModal) closeModal('modal-menu-camera');
+  }
+
+  function captureMenuCamera() {
+    const video = qs('menu-camera-video');
+    if (!video || !state.menuCameraStream) {
+      showToast('กล้องยังไม่พร้อม', 'error');
+      return;
+    }
+    const width = video.videoWidth || 1280;
+    const height = video.videoHeight || 720;
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return showToast('ไม่สามารถจับภาพได้', 'error');
+    ctx.drawImage(video, 0, 0, width, height);
+    const result = canvas.toDataURL('image/jpeg', 0.92);
+    state.tempImg = result;
+    if (qs('form-menu-preview')) {
+      qs('form-menu-preview').src = result;
+      qs('form-menu-preview').classList.remove('hidden');
+    }
+    closeMenuCamera();
+    showToast('เพิ่มรูปเมนูแล้ว', 'success');
   }
 
   async function exportBackup() {
@@ -3985,6 +4048,9 @@
     updateUnits,
     saveSystemSettings,
     handleImage,
+    openMenuCamera,
+    closeMenuCamera,
+    captureMenuCamera,
     exportBackup,
     importBackup,
     openRecoveryModal: () => {
