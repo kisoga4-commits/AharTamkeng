@@ -51,6 +51,7 @@ body {
 body {
   max-width: 100vw;
   overflow-x: hidden;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 img {
@@ -117,12 +118,12 @@ hr {
   max-width: 520px;
   min-height: 100vh;
   margin: 0 auto;
-  padding: 12px 14px 28px;
+  padding: 12px 14px calc(28px + env(safe-area-inset-bottom));
 }
 
 @media (max-width: 420px) {
   .app-container {
-    padding: 10px 10px 22px;
+    padding: 10px 10px calc(22px + env(safe-area-inset-bottom));
   }
 
   .glass-header {
