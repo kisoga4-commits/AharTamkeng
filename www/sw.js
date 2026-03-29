@@ -99,7 +99,7 @@ self.addEventListener('fetch', (event) => {
         return networkResponse;
       } catch (_) {
         const fallback = await caches.match('./index.html')
-          || await caches.match('/index.html')
+          || await caches.match('/FAKDU3/index.html')
           || await caches.match('./');
         if (fallback) return fallback;
         return new Response(
