@@ -6,6 +6,7 @@
   const LS_SHOP_ID = 'FAKDU_VAULT_SHOP_ID';
   const LS_LICENSE = 'FAKDU_VAULT_GENKEY';
   const LS_PRO_UNLOCKED = 'FAKDU_PRO_UNLOCKED';
+  const LS_PRO_SHOP_ID = 'FAKDU_PRO_SHOP_ID';
 
   function now() {
     return Date.now();
@@ -47,6 +48,36 @@
 
   function normalizeLicenseCode(value = '') {
     return String(value || '').trim();
+  }
+
+  function saveProStatus(shopId = '') {
+    const sid = normalizeShopId(shopId);
+    if (!sid) return false;
+    localStorage.setItem(LS_PRO_UNLOCKED, 'true');
+    localStorage.setItem(LS_PRO_SHOP_ID, sid);
+    return true;
+  }
+
+  function clearProStatus() {
+    localStorage.removeItem(LS_PRO_UNLOCKED);
+    localStorage.removeItem(LS_PRO_SHOP_ID);
+  }
+
+  function loadProStatus(shopId = '') {
+    const sid = normalizeShopId(shopId);
+    const unlocked = localStorage.getItem(LS_PRO_UNLOCKED) === 'true';
+    const storedShopId = normalizeShopId(localStorage.getItem(LS_PRO_SHOP_ID) || '');
+
+    if (!unlocked) return { unlocked: false, shopId: storedShopId };
+    if (!storedShopId) {
+      clearProStatus();
+      return { unlocked: false, shopId: '' };
+    }
+    if (sid && sid !== storedShopId) {
+      clearProStatus();
+      return { unlocked: false, shopId: storedShopId };
+    }
+    return { unlocked: true, shopId: storedShopId };
   }
 
   function ensureDbShape(db) {
@@ -253,6 +284,7 @@
       db.vault.lastValidatedAt = now();
       db.vault.status = 'invalid';
       db.vault.note = result.message || 'ไม่ผ่านการตรวจสอบ license';
+      clearProStatus();
       return result;
     }
 
@@ -269,7 +301,7 @@
     db.vault.features = ['all'];
 
     localStorage.setItem(LS_LICENSE, code);
-    localStorage.setItem(LS_PRO_UNLOCKED, 'true');
+    saveProStatus(sid);
 
     return {
       valid: true,
@@ -299,8 +331,21 @@
       db.vault.installId = installId;
       db.vault.status = 'invalid';
       db.vault.note = 'ไม่พบ SHOP ID ของร้านนี้';
-      localStorage.removeItem(LS_PRO_UNLOCKED);
+      clearProStatus();
       return false;
+    }
+    const savedPro = loadProStatus(sid);
+    if (savedPro.unlocked) {
+      db.shopId = sid;
+      db.licenseActive = true;
+      db.vault.installId = installId;
+      db.vault.lastValidatedAt = now();
+      db.vault.status = 'active';
+      db.vault.note = 'โหลดสถานะ Pro จากเครื่องนี้';
+      db.vault.licenseId = sid;
+      db.vault.plan = 'pro';
+      db.vault.features = ['all'];
+      return true;
     }
     const code = normalizeLicenseCode(db.licenseToken || localStorage.getItem(LS_LICENSE) || '');
 
@@ -309,7 +354,7 @@
       db.vault.installId = installId;
       db.vault.status = 'idle';
       db.vault.note = 'ยังไม่มี licenseCode';
-      localStorage.removeItem(LS_PRO_UNLOCKED);
+      clearProStatus();
       return false;
     }
 
@@ -322,7 +367,7 @@
       db.licenseActive = false;
       db.vault.status = 'invalid';
       db.vault.note = result.message || 'license ไม่ผ่านการตรวจสอบ';
-      localStorage.removeItem(LS_PRO_UNLOCKED);
+      clearProStatus();
       return false;
     }
 
@@ -334,7 +379,7 @@
     db.vault.plan = 'pro';
     db.vault.features = ['all'];
     localStorage.setItem(LS_LICENSE, code);
-    localStorage.setItem(LS_PRO_UNLOCKED, 'true');
+    saveProStatus(sid);
     return true;
   }
 
@@ -354,7 +399,7 @@
     };
 
     localStorage.removeItem(LS_LICENSE);
-    localStorage.removeItem(LS_PRO_UNLOCKED);
+    clearProStatus();
     return { ok: true };
   }
 
@@ -435,6 +480,9 @@
     exportVaultBackup,
     importVaultBackup,
     getStatus,
-    buildGenKeyFromParts
+    buildGenKeyFromParts,
+    saveProStatus,
+    loadProStatus,
+    clearProStatus
   };
 })();
