@@ -2033,10 +2033,10 @@
     }
 
     if (result && result.valid === false) {
-      return showToast(result.message || 'คีย์ไม่ถูกต้อง', 'error');
+      return showToast(result.message || 'GENKEY ไม่ถูกต้อง', 'error');
     }
     if (!result && key.length < 6) {
-      return showToast('คีย์ไม่ถูกต้อง', 'error');
+      return showToast('GENKEY ไม่ถูกต้อง', 'error');
     }
 
     state.db.licenseToken = result?.token || key;
@@ -2046,17 +2046,24 @@
     applyTheme();
     closeModal('modal-pro-unlock');
     saveDb({ render: true, sync: false });
-    showToast('ปลดล็อก PRO สำเร็จ', 'success');
+    showToast(result?.message || 'ปลดล็อก PRO สำเร็จ', 'success');
   }
 
   function handleLockedFeatureClick() {
     showToast('ฟีเจอร์นี้เปิดใช้งานแล้ว', 'success');
   }
 
-  function openProModal() {
+  async function openProModal() {
     if (state.isPro) {
       showToast('ปลดล็อก Pro แล้ว', 'success');
       return;
+    }
+    const vault = resolveVaultApi();
+    if (typeof vault.getRequestCode === 'function') {
+      try {
+        const req = await vault.getRequestCode({ shopId: state.db.shopId, deviceId: state.hwid, db: state.db });
+        if (req?.requestCode && qs('display-hwid')) qs('display-hwid').textContent = req.requestCode;
+      } catch (_) {}
     }
     openModal('modal-pro-unlock');
   }
