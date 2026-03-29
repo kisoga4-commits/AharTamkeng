@@ -1106,7 +1106,12 @@
     }
     state.db.carts[state.activeUnitId] = cart;
     updateCartTotal();
-    openReviewCartModal();
+    if (!cart.length) {
+      closeModal('modal-review');
+      showToast('ตะกร้าว่างแล้ว', 'click');
+    } else {
+      openReviewCartModal();
+    }
     saveDb({ render: true, sync: false });
   }
 
@@ -1181,6 +1186,7 @@
     closeModal('modal-review');
     renderOrderedItemsBar(unit);
     updateCartTotal();
+    renderShopQueue();
     saveDb({ render: true, sync: true });
     showToast('ส่งออร์เดอร์แล้ว', 'success');
     switchTab('shop', qs('tab-shop'));
@@ -1898,18 +1904,13 @@
       logOperation('CREATE_MENU_ITEM', { name, price });
     }
     closeModal('modal-menu-form');
-    const modalEl = qs('modal-menu-form');
-    if (modalEl) {
-      modalEl.classList.remove('open', 'flex');
-      modalEl.classList.add('hidden');
-      modalEl.style.display = 'none';
-    }
     state.tempAddons = [];
     state.tempImg = '';
     if (qs('form-menu-file')) qs('form-menu-file').value = '';
     closeMenuCamera();
+    renderAdminLists();
+    renderItemList();
     saveDb({ render: true, sync: true });
-    setTimeout(() => closeModal('modal-menu-form'), 0);
     showToast('บันทึกเมนูแล้ว', 'success');
   }
 
