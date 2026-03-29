@@ -142,6 +142,20 @@
     }
   }
 
+  function validateGenkeyInput({ key = '', expectedShopId = '' } = {}) {
+    const normalizedKey = String(key || '').trim();
+    if (!normalizedKey) return { valid: false, message: 'กรุณากรอก GENKEY ก่อน' };
+    if (normalizedKey.length < 24) return { valid: false, message: 'GENKEY สั้นเกินไป (ขั้นต่ำ 24 ตัวอักษร)' };
+
+    const keyShopId = parseShopIdFromGenkey(normalizedKey);
+    const sid = normalizeShopId(expectedShopId);
+    if (!keyShopId) return { valid: false, message: 'รูปแบบ GENKEY ไม่ถูกต้อง หรืออ่าน SHOP ID ไม่ได้' };
+    if (sid && keyShopId !== sid) {
+      return { valid: false, message: `GENKEY นี้เป็นของร้าน ${keyShopId} แต่เครื่องนี้ตั้งเป็น ${sid}` };
+    }
+    return { valid: true, key: normalizedKey, keyShopId };
+  }
+
   function getVaultState() {
     return safeJsonParse(localStorage.getItem(LS_VAULT_STATE), {
       installId: '',
@@ -327,22 +341,84 @@
 
   async function activateProKey({ key = '', shopId = '', deviceId = '', db = {} } = {}) {
     ensureDbShape(db);
-    const keyShopId = parseShopIdFromGenkey(key);
-    const sid = await ensureShopId(db, keyShopId || shopId);
-    const refs = await buildBindingRefs(sid, deviceId);
+    const existingShopId = normalizeShopId(db?.shopId || shopId || localStorage.getItem(LS_LAST_SHOP_ID) || '');
+    const keyCheck = validateGenkeyInput({ key, expectedShopId: existingShopId });
+    if (!keyCheck.valid) return { valid: false, message: keyCheck.message };
 
-    if (!navigator.onLine) {
-      return { valid: false, message: 'การ Activate ต้องออนไลน์เท่านั้น' };
+    const sid = await ensureShopId(db, keyCheck.keyShopId || existingShopId);
+    const refs = await buildBindingRefs(sid, deviceId);
+    const keyValue = keyCheck.key;
+
+    async function applyActivationResult({ token = '', resolvedShopId = sid, licenseId = '', keyRef = '', note = '', metadata = null } = {}) {
+      const normalizedShopId = normalizeShopId(resolvedShopId || sid);
+      const finalToken = String(token || keyValue).trim();
+      const finalLicenseId = String(licenseId || `LIC-${randomString(10)}`);
+      const payload = await makeVaultPayload({ sid: normalizedShopId, ref: refs.installRef });
+      const signature = await buildVaultSignature(payload);
+      const activatedAt = now();
+
+      db.shopId = normalizedShopId;
+      db.licenseToken = finalToken;
+      db.licenseActive = true;
+      db.vault.installRef = refs.installRef;
+      db.vault.softRef = refs.softRef;
+      db.vault.activatedAt = activatedAt;
+      db.vault.lastValidatedAt = activatedAt;
+      db.vault.status = 'active';
+      db.vault.note = String(note || 'Activated');
+      db.vault.licenseId = finalLicenseId;
+      db.vault.keyRef = String(keyRef || 'local-fallback');
+      db.vault.payload = payload;
+      db.vault.signature = signature;
+
+      localStorage.setItem(LS_LAST_LICENSE, finalToken);
+      localStorage.setItem(LS_LAST_SHOP_ID, normalizedShopId);
+      setActivationCache({
+        shopId: normalizedShopId,
+        installRef: refs.installRef,
+        softRef: refs.softRef,
+        activatedAt,
+        verifiedAt: activatedAt
+      });
+      setVaultState({
+        installId: refs.installId,
+        installRef: refs.installRef,
+        softRef: refs.softRef,
+        shopId: normalizedShopId,
+        activatedAt,
+        lastValidatedAt: activatedAt,
+        status: 'active',
+        note: db.vault.note,
+        licenseId: finalLicenseId,
+        keyRef: db.vault.keyRef,
+        payload,
+        signature
+      });
+
+      return {
+        valid: true,
+        token: finalToken,
+        shopId: normalizedShopId,
+        licenseId: finalLicenseId,
+        metadata: { payload, signature, source: db.vault.keyRef, extra: clone(metadata || {}) },
+        message: db.vault.note
+      };
     }
 
     const api = getLicenseApi();
-    if (!api || typeof api.activateOnline !== 'function') {
-      return { valid: false, message: 'ยังไม่ได้ตั้งค่า License API ฝั่งเซิร์ฟเวอร์' };
+    const canActivateOnline = Boolean(navigator.onLine && api && typeof api.activateOnline === 'function');
+    if (!canActivateOnline) {
+      return applyActivationResult({
+        token: keyValue,
+        resolvedShopId: sid,
+        keyRef: 'local-fallback',
+        note: !navigator.onLine ? 'Activated แบบออฟไลน์จาก GENKEY' : 'Activated แบบ local fallback (ยังไม่ตั้งค่า License API)'
+      });
     }
 
     try {
       const activated = await api.activateOnline({
-        key: String(key || '').trim(),
+        key: keyValue,
         shopId: sid,
         installId: refs.installId,
         installRef: refs.installRef,
@@ -354,52 +430,21 @@
         return { valid: false, message: activated?.message || 'เปิดสิทธิ์ไม่สำเร็จ' };
       }
 
-      const resolvedShopId = normalizeShopId(activated.shopId || sid);
-      const token = String(activated.token || key).trim();
-      const licenseId = String(activated.licenseId || `LIC-${randomString(10)}`);
-      const payload = await makeVaultPayload({ sid: resolvedShopId, ref: refs.installRef });
-      const signature = await buildVaultSignature(payload);
-
-      db.shopId = resolvedShopId;
-      db.licenseToken = token;
-      db.vault.installRef = refs.installRef;
-      db.vault.softRef = refs.softRef;
-      db.vault.activatedAt = now();
-      db.vault.lastValidatedAt = now();
-      db.vault.status = 'active';
-      db.vault.note = activated.message || 'Activated online';
-      db.vault.licenseId = licenseId;
-      db.vault.keyRef = String(activated.keyRef || 'server');
-      db.vault.payload = payload;
-      db.vault.signature = signature;
-
-      localStorage.setItem(LS_LAST_LICENSE, token);
-      localStorage.setItem(LS_LAST_SHOP_ID, resolvedShopId);
-      setActivationCache({
-        shopId: resolvedShopId,
-        installRef: refs.installRef,
-        softRef: refs.softRef,
-        activatedAt: db.vault.activatedAt,
-        verifiedAt: db.vault.lastValidatedAt
+      return applyActivationResult({
+        token: String(activated.token || keyValue).trim(),
+        resolvedShopId: normalizeShopId(activated.shopId || sid),
+        licenseId: String(activated.licenseId || ''),
+        keyRef: String(activated.keyRef || 'server'),
+        note: activated.message || 'Activated online',
+        metadata: activated.metadata || {}
       });
-      setVaultState({
-        installId: refs.installId,
-        installRef: refs.installRef,
-        softRef: refs.softRef,
-        shopId: resolvedShopId,
-        activatedAt: db.vault.activatedAt,
-        lastValidatedAt: db.vault.lastValidatedAt,
-        status: 'active',
-        note: db.vault.note,
-        licenseId,
-        keyRef: db.vault.keyRef,
-        payload,
-        signature
-      });
-
-      return { valid: true, token, shopId: resolvedShopId, licenseId, metadata: { payload, signature }, message: db.vault.note };
     } catch (_) {
-      return { valid: false, message: 'เชื่อมต่อเซิร์ฟเวอร์ activate ไม่สำเร็จ' };
+      return applyActivationResult({
+        token: keyValue,
+        resolvedShopId: sid,
+        keyRef: 'local-fallback',
+        note: 'เชื่อมต่อเซิร์ฟเวอร์ activate ไม่สำเร็จ (ใช้ local fallback)'
+      });
     }
   }
 
@@ -419,6 +464,7 @@
 
     if (matchedCache) {
       db.licenseToken = token;
+      db.licenseActive = true;
       db.vault.status = 'active';
       db.vault.note = navigator.onLine ? 'Activated (online check optional)' : 'Activated (offline allowed)';
       db.vault.installRef = refs.installRef;
@@ -429,12 +475,14 @@
 
     db.vault.status = 'invalid';
     db.vault.note = 'ยังไม่ผ่านการ activate ออนไลน์บนอุปกรณ์นี้';
+    db.licenseActive = false;
     return false;
   }
 
   async function clearLicense(db = {}) {
     ensureDbShape(db);
     db.licenseToken = '';
+    db.licenseActive = false;
     db.vault = {
       installRef: '',
       softRef: '',
