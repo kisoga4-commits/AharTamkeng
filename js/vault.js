@@ -307,11 +307,17 @@
     }
 
     const refs = await buildBindingRefs(sid);
-    if (normalizeShopId(payload.shopId) !== sid || payload.installRef !== refs.installRef || payload.softRef !== refs.softRef) {
+    if (normalizeShopId(payload.shopId) !== sid) {
       db.licenseActive = false;
       db.vault.status = 'invalid';
-      db.vault.note = 'license ไม่ตรงกับเครื่องนี้';
-      return { valid: false, message: 'license ไม่ตรงกับเครื่องนี้' };
+      db.vault.note = 'license ไม่ตรงร้านนี้';
+      return { valid: false, message: 'license ไม่ตรงร้านนี้' };
+    }
+    if ((payload.installRef && payload.installRef !== refs.installRef) || (payload.softRef && payload.softRef !== refs.softRef)) {
+      db.licenseActive = false;
+      db.vault.status = 'invalid';
+      db.vault.note = 'license ไม่ตรงกับอุปกรณ์นี้';
+      return { valid: false, message: 'license ไม่ตรงกับอุปกรณ์นี้' };
     }
 
     if (Number(payload.exp || 0) > 0 && now() > Number(payload.exp)) {
@@ -346,17 +352,30 @@
     return { valid: true, message: db.vault.note, payload: clone(payload) };
   }
 
+  function parseGenkey(rawValue = '') {
+    const raw = String(rawValue || '').trim();
+    if (!raw) return { ok: false, message: 'GENKEY ว่างเปล่า' };
+    const parts = raw.split('.');
+    // Primary format: payload.signature (2 parts)
+    if (parts.length === 2) return { ok: true, payloadEncoded: parts[0], signatureEncoded: parts[1], raw };
+    // Backward compatibility: FKD1.payload.signature
+    if (parts.length === 3 && parts[0] === 'FKD1') {
+      return { ok: true, payloadEncoded: parts[1], signatureEncoded: parts[2], raw };
+    }
+    return { ok: false, message: 'GENKEY ไม่ถูกต้อง' };
+  }
+
   async function activateWithGenkey(genkey, { shopId = '', deviceId = '', db = {} } = {}) {
     ensureDbShape(db);
     const sid = await ensureShopId(db, shopId);
     const refs = await buildBindingRefs(sid, deviceId);
-    const raw = String(genkey || '').trim();
-    const parts = raw.split('.');
-    if (parts.length !== 3 || parts[0] !== 'FKD1') return { valid: false, message: 'GENKEY ไม่ถูกต้อง' };
+    const parsed = parseGenkey(genkey);
+    if (!parsed.ok) return { valid: false, message: parsed.message };
+    const { raw, payloadEncoded, signatureEncoded } = parsed;
 
     let payload;
     try {
-      payload = safeJsonParse(b64urlDecodeUtf8(parts[1]));
+      payload = safeJsonParse(b64urlDecodeUtf8(payloadEncoded));
     } catch (_) {
       return { valid: false, message: 'อ่านข้อมูล GENKEY ไม่ได้' };
     }
@@ -364,20 +383,20 @@
     if (String(payload.app || '').trim().toUpperCase() !== EXPECTED_APP) return { valid: false, message: 'GENKEY ใช้กับแอปนี้ไม่ได้' };
     if (!toBool(payload.pro) || !toBool(payload.lifetime)) return { valid: false, message: 'GENKEY สิทธิ์ไม่ครบ (ต้องเป็น Pro Lifetime)' };
 
-    const sigCheck = await verifyGenkeySignature(parts[1], parts[2]);
+    const sigCheck = await verifyGenkeySignature(payloadEncoded, signatureEncoded);
     if (!sigCheck.ok) return { valid: false, message: sigCheck.message };
 
     if (normalizeShopId(payload.shopId) !== sid) return { valid: false, message: 'GENKEY ไม่ตรงร้านนี้' };
-    if (String(payload.installRef || '') !== refs.installRef) return { valid: false, message: 'GENKEY ไม่ตรงอุปกรณ์นี้' };
-    if (String(payload.softRef || '') !== refs.softRef) return { valid: false, message: 'GENKEY ไม่ตรงสภาพแวดล้อมอุปกรณ์' };
+    if (payload.installRef && String(payload.installRef || '') !== refs.installRef) return { valid: false, message: 'GENKEY ไม่ตรงอุปกรณ์นี้' };
+    if (payload.softRef && String(payload.softRef || '') !== refs.softRef) return { valid: false, message: 'GENKEY ไม่ตรงสภาพแวดล้อมอุปกรณ์' };
     if (Number(payload.exp || 0) > 0 && now() > Number(payload.exp)) return { valid: false, message: 'GENKEY หมดอายุแล้ว' };
 
     const activatedAt = now();
     saveLicense({
       raw,
       payload,
-      payloadEncoded: parts[1],
-      signatureEncoded: parts[2],
+      payloadEncoded,
+      signatureEncoded,
       activatedAt,
       lastValidatedAt: activatedAt,
       note: 'Activated by offline GENKEY'
@@ -418,6 +437,16 @@
   async function isProActive(db = {}) {
     const check = await verifyStoredLicense(db);
     return Boolean(check.valid);
+  }
+
+  async function hasProAccess(db = {}) {
+    const check = await verifyStoredLicense(db);
+    return Boolean(
+      check.valid
+      && db?.licenseActive === true
+      && db?.vault?.status === 'active'
+      && String(db?.vault?.plan || '').toLowerCase().includes('pro')
+    );
   }
 
   // compatibility wrappers
@@ -509,6 +538,7 @@
     validateLicenseToken,
     activateProKey,
     isProActive,
+    hasProAccess,
     verifyRecoveryAnswers,
     exportVaultBackup,
     importVaultBackup,
