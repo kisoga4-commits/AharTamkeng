@@ -2017,9 +2017,14 @@
 
   //* recovery open
   function updateRecoveryStateLabels() {
-    if (qs('recovery-phone-state-2')) qs('recovery-phone-state-2').textContent = state.db.recovery.phone || 'ยังไม่ตั้งค่า';
-    if (qs('recovery-color-state-2')) qs('recovery-color-state-2').textContent = COLOR_MAP[state.db.recovery.color] || 'ยังไม่ตั้งค่า';
-    if (qs('recovery-animal-state-2')) qs('recovery-animal-state-2').textContent = ANIMAL_MAP[state.db.recovery.animal] || 'ยังไม่ตั้งค่า';
+    const hasRecoveryData = Boolean(
+      state.db.recovery.phone
+      && state.db.recovery.color
+      && state.db.recovery.animal
+    );
+    if (qs('recovery-phone-state-2')) qs('recovery-phone-state-2').textContent = hasRecoveryData ? '' : 'ยังไม่ตั้งค่า';
+    if (qs('recovery-color-state-2')) qs('recovery-color-state-2').textContent = hasRecoveryData ? '' : 'ยังไม่ตั้งค่า';
+    if (qs('recovery-animal-state-2')) qs('recovery-animal-state-2').textContent = hasRecoveryData ? '' : 'ยังไม่ตั้งค่า';
   }
 
   function saveRecoveryData() {
@@ -2032,6 +2037,9 @@
     updateRecoveryStateLabels();
     closeModal('modal-recovery-setup');
     saveDb({ render: false, sync: false });
+    if (qs('setup-rec-phone')) qs('setup-rec-phone').value = '';
+    if (qs('setup-rec-color')) qs('setup-rec-color').selectedIndex = 0;
+    if (qs('setup-rec-animal')) qs('setup-rec-animal').selectedIndex = 0;
     showToast('บันทึกข้อมูลช่วยจำแล้ว', 'success');
   }
 
@@ -2050,6 +2058,9 @@
     state.db.adminPin = '1234';
     if (qs('sys-pin')) qs('sys-pin').value = '1234';
     closeModal('modal-recovery');
+    if (qs('rec-ans-phone')) qs('rec-ans-phone').value = '';
+    if (qs('rec-ans-color')) qs('rec-ans-color').selectedIndex = 0;
+    if (qs('rec-ans-animal')) qs('rec-ans-animal').selectedIndex = 0;
     saveDb({ render: false, sync: false });
     showToast('รีเซ็ต PIN เป็น 1234 แล้ว', 'success');
   }
@@ -3980,6 +3991,9 @@
         showToast('รุ่นทดลองยังไม่รองรับลืมรหัส Admin', 'error');
         return;
       }
+      if (qs('rec-ans-phone')) qs('rec-ans-phone').value = '';
+      if (qs('rec-ans-color')) qs('rec-ans-color').selectedIndex = 0;
+      if (qs('rec-ans-animal')) qs('rec-ans-animal').selectedIndex = 0;
       closeModal('modal-admin-pin');
       openModal('modal-recovery');
     },
