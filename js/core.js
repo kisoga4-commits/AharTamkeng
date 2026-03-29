@@ -2005,10 +2005,13 @@
       try {
         state.isPro = Boolean(await vault.isProActive(state.db));
       } catch (_) {
-        state.isPro = Boolean(state.db.licenseActive || state.db.licenseToken);
+        state.isPro = false;
       }
     } else {
-      state.isPro = Boolean(state.db.licenseActive || state.db.licenseToken);
+      state.isPro = false;
+    }
+    if (!state.isPro) {
+      state.db.licenseActive = false;
     }
     syncCustomSearchUiMode();
   }
@@ -2039,7 +2042,13 @@
       return showToast('GENKEY ไม่ถูกต้อง', 'error');
     }
 
-    state.db.licenseToken = result?.token || key;
+    if (!result || result.valid !== true) {
+      state.db.licenseToken = '';
+      state.db.licenseActive = false;
+      return showToast('GENKEY ไม่ผ่านการตรวจ offline', 'error');
+    }
+
+    state.db.licenseToken = result?.token || '';
     state.db.licenseActive = true;
     logOperation('ACTIVATE_PRO');
     await syncProStatus();

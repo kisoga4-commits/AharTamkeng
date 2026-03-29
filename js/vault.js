@@ -6,6 +6,8 @@
   const LS_LAST_SHOP_ID = 'FAKDU_VAULT_LAST_SHOP_ID';
   const LS_VAULT_STATE = 'FAKDU_VAULT_STATE_V1020';
   const LS_STORED_LICENSE = 'FAKDU_VAULT_STORED_LICENSE_V1020';
+  const EXPECTED_APP = 'FAKDU';
+  const EXPECTED_LICENSE_TYPE = 'fakdu_license';
 
   // Client must contain public key only. Put real SPKI PEM here later.
   const PUBLIC_KEY_PEM_PLACEHOLDER = 'REPLACE_WITH_REAL_PUBLIC_KEY_PEM';
@@ -28,6 +30,11 @@
       .replace(/[^A-Z0-9_-]/g, '-')
       .replace(/-{2,}/g, '-')
       .replace(/^-+|-+$/g, '');
+  }
+  function toBool(value) {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'string') return value.trim().toLowerCase() === 'true';
+    return Boolean(value);
   }
   function b64urlEncodeUtf8(text = '') {
     return btoa(unescape(encodeURIComponent(String(text))))
@@ -148,6 +155,10 @@
     return sid;
   }
 
+  async function getCurrentShopId(db = {}, fallback = '') {
+    return ensureShopId(db, fallback);
+  }
+
   function getConfiguredPublicKeyPem() {
     const configured = String(window.FAKDU_VAULT_PUBLIC_KEY_PEM || '').trim();
     return configured || PUBLIC_KEY_PEM_PLACEHOLDER;
@@ -249,6 +260,24 @@
       db.vault.note = 'license เสียรูปแบบ';
       return { valid: false, message: 'license เสียรูปแบบ' };
     }
+    if (String(payload.typ || '') !== EXPECTED_LICENSE_TYPE) {
+      db.licenseActive = false;
+      db.vault.status = 'invalid';
+      db.vault.note = 'license ประเภทไม่ถูกต้อง';
+      return { valid: false, message: 'license ประเภทไม่ถูกต้อง' };
+    }
+    if (String(payload.app || '').trim().toUpperCase() !== EXPECTED_APP) {
+      db.licenseActive = false;
+      db.vault.status = 'invalid';
+      db.vault.note = 'license ใช้กับแอปนี้ไม่ได้';
+      return { valid: false, message: 'license ใช้กับแอปนี้ไม่ได้' };
+    }
+    if (!toBool(payload.pro) || !toBool(payload.lifetime)) {
+      db.licenseActive = false;
+      db.vault.status = 'invalid';
+      db.vault.note = 'license สิทธิ์ไม่ครบ (ต้องเป็น Pro Lifetime)';
+      return { valid: false, message: 'license สิทธิ์ไม่ครบ (ต้องเป็น Pro Lifetime)' };
+    }
 
     const refs = await buildBindingRefs(sid);
     if (normalizeShopId(payload.shopId) !== sid || payload.installRef !== refs.installRef || payload.softRef !== refs.softRef) {
@@ -284,7 +313,7 @@
     db.vault.note = 'ตรวจ license offline สำเร็จ';
     db.vault.licenseId = String(payload.licenseId || '');
     db.vault.keyRef = String(payload.keyRef || 'offline-signature');
-    db.vault.plan = String(payload.plan || 'pro');
+    db.vault.plan = String(payload.plan || 'pro-lifetime');
 
     saveLicense({ ...license, lastValidatedAt: db.vault.lastValidatedAt, note: db.vault.note });
     return { valid: true, message: db.vault.note, payload: clone(payload) };
@@ -304,7 +333,9 @@
     } catch (_) {
       return { valid: false, message: 'อ่านข้อมูล GENKEY ไม่ได้' };
     }
-    if (!payload || payload.typ !== 'fakdu_license') return { valid: false, message: 'GENKEY คนละประเภท' };
+    if (!payload || payload.typ !== EXPECTED_LICENSE_TYPE) return { valid: false, message: 'GENKEY คนละประเภท' };
+    if (String(payload.app || '').trim().toUpperCase() !== EXPECTED_APP) return { valid: false, message: 'GENKEY ใช้กับแอปนี้ไม่ได้' };
+    if (!toBool(payload.pro) || !toBool(payload.lifetime)) return { valid: false, message: 'GENKEY สิทธิ์ไม่ครบ (ต้องเป็น Pro Lifetime)' };
 
     const sigCheck = await verifyGenkeySignature(parts[1], parts[2]);
     if (!sigCheck.ok) return { valid: false, message: sigCheck.message };
@@ -336,7 +367,7 @@
     db.vault.note = 'ปลดล็อกสำเร็จ (offline GENKEY)';
     db.vault.licenseId = String(payload.licenseId || '');
     db.vault.keyRef = String(payload.keyRef || 'offline-signature');
-    db.vault.plan = String(payload.plan || 'pro');
+    db.vault.plan = String(payload.plan || 'pro-lifetime');
 
     return { valid: true, token: raw, shopId: sid, licenseId: db.vault.licenseId, plan: db.vault.plan, message: db.vault.note };
   }
@@ -410,12 +441,14 @@
     const parsed = safeJsonParse(rawText);
     if (!parsed || typeof parsed !== 'object') return { ok: false, message: 'ไฟล์ backup ไม่ถูกต้อง' };
     db.shopId = normalizeShopId(parsed.shopId || db.shopId || '');
-    if (typeof parsed.licenseToken === 'string') db.licenseToken = parsed.licenseToken;
-    if (typeof parsed.licenseActive === 'boolean') db.licenseActive = parsed.licenseActive;
+    db.licenseToken = '';
+    db.licenseActive = false;
     if (parsed.vault && typeof parsed.vault === 'object') db.vault = { ...db.vault, ...clone(parsed.vault) };
     if (parsed.storedLicense && typeof parsed.storedLicense === 'object') saveLicense(parsed.storedLicense);
     localStorage.setItem(LS_LAST_SHOP_ID, db.shopId || '');
-    return { ok: true, message: 'นำเข้าข้อมูล vault สำเร็จ' };
+    const check = await verifyStoredLicense(db);
+    if (!check.valid) await clearLicense(db);
+    return { ok: true, message: check.valid ? 'นำเข้าข้อมูล vault สำเร็จ' : 'นำเข้าแล้วแต่ license ไม่ผ่านการตรวจ' };
   }
 
   async function getStatus(db = {}) {
@@ -434,6 +467,7 @@
   window.FakduVault = {
     APP_VERSION,
     normalizeShopId,
+    getCurrentShopId,
     getActivationRequest,
     getRequestCode,
     activateWithGenkey,
