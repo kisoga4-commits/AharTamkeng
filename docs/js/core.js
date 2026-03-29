@@ -76,7 +76,7 @@
   };
   const TRIAL_LIMITS = {
     unitMax: 4,
-    menuMax: 4,
+    menuMax: 9999,
     onlineClientMax: 1,
     topBasicMax: 3,
     themePalette: ['#800000', '#1d4ed8', '#0f766e', '#b45309', '#111827']
@@ -349,7 +349,7 @@
       setStartupStatus('โหมดออฟไลน์พร้อมใช้งาน', 'success');
       setTimeout(() => setStartupStatus('', 'loading'), 2800);
     } else if (report.db) {
-      setStartupStatus('โหลดข้อมูลเครื่องแล้ว แต่ระบบออฟไลน์ยังตั้งค่าไม่ครบ', 'warning');
+      setStartupStatus('', 'loading');
     } else {
       setStartupStatus('พบปัญหาการเริ่มต้นระบบ กรุณารีเฟรชอีกครั้ง', 'error');
     }
@@ -2243,16 +2243,11 @@
     if ((state.db.unitCount || 0) > TRIAL_LIMITS.unitMax) {
       forceRebuildUnits(TRIAL_LIMITS.unitMax, state.db.unitType || 'โต๊ะ');
     }
-    if (state.db.items.length > TRIAL_LIMITS.menuMax) {
-      state.db.items = state.db.items.slice(0, TRIAL_LIMITS.menuMax);
-    }
     if (Array.isArray(state.db.sync.clients) && state.db.sync.clients.length > TRIAL_LIMITS.onlineClientMax) {
       state.db.sync.clients = state.db.sync.clients.slice(0, TRIAL_LIMITS.onlineClientMax);
     }
     const unitInput = qs('config-unit-count');
     if (unitInput) unitInput.max = String(TRIAL_LIMITS.unitMax);
-    const addMenuBtn = qs('btn-add-menu-item');
-    if (addMenuBtn) addMenuBtn.disabled = state.db.items.length >= TRIAL_LIMITS.menuMax;
     const backupBtn = qs('btn-export-backup');
     if (backupBtn) backupBtn.disabled = true;
     const restoreWrap = qs('btn-import-backup-wrap');
