@@ -1904,7 +1904,7 @@
   }
 
   async function exportBackup() {
-    if (!state.isPro) return showToast('รุ่นทดลองไม่รองรับ Backup', 'error');
+    if (!(await ensureProAccess('รุ่นทดลองไม่รองรับ Backup'))) return;
     const dbApi = resolveDbApi();
     const raw = dbApi.exportData ? await dbApi.exportData(state.db) : JSON.stringify(state.db, null, 2);
     const blob = new Blob([raw], { type: 'application/json' });
@@ -1918,7 +1918,7 @@
   }
 
   async function importBackup(event) {
-    if (!state.isPro) return showToast('รุ่นทดลองไม่รองรับ Restore', 'error');
+    if (!(await ensureProAccess('รุ่นทดลองไม่รองรับ Restore'))) return;
     const file = event?.target?.files?.[0];
     if (!file) return;
     if (!confirm('ข้อมูลในเครื่องจะถูกแทนที่ด้วยไฟล์ backup นี้ ยืนยันหรือไม่?')) return;
@@ -1966,8 +1966,8 @@
     showToast('บันทึกข้อมูลช่วยจำแล้ว', 'success');
   }
 
-  function executeRecovery() {
-    if (!state.isPro) return showToast('รุ่นทดลองยังไม่รองรับลืมรหัส Admin', 'error');
+  async function executeRecovery() {
+    if (!(await ensureProAccess('รุ่นทดลองยังไม่รองรับลืมรหัส Admin'))) return;
     const phone = qs('rec-ans-phone')?.value?.trim() || '';
     const color = qs('rec-ans-color')?.value || '';
     const animal = qs('rec-ans-animal')?.value || '';
@@ -1989,7 +1989,13 @@
   //* pro/vault open
   async function syncProStatus() {
     const vault = resolveVaultApi();
-    if (typeof vault.isProActive === 'function') {
+    if (typeof vault.hasProAccess === 'function') {
+      try {
+        state.isPro = Boolean(await vault.hasProAccess(state.db));
+      } catch (_) {
+        state.isPro = false;
+      }
+    } else if (typeof vault.isProActive === 'function') {
       try {
         state.isPro = Boolean(await vault.isProActive(state.db));
       } catch (_) {
@@ -2002,6 +2008,13 @@
       state.db.licenseActive = false;
     }
     syncCustomSearchUiMode();
+  }
+
+  async function ensureProAccess(message = 'ฟีเจอร์นี้ใช้ได้เฉพาะ Pro') {
+    await syncProStatus();
+    if (state.isPro) return true;
+    showToast(message, 'error');
+    return false;
   }
 
   async function validateProKey() {
