@@ -12,6 +12,7 @@
   const LS_FORCE_CLIENT_MODE = 'FAKDU_FORCE_CLIENT_MODE';
   const LS_PENDING_PAIR_REQUEST_ID = 'FAKDU_PENDING_PAIR_REQUEST_ID';
   const LS_MENU_IMAGE_CACHE_PREFIX = 'FAKDU_MENU_IMAGE_CACHE_';
+  const LS_PROMPTPAY_DYNAMIC = 'promptpay_dynamic';
   const HEARTBEAT_INTERVAL_MS = 5000;
   const CLIENT_AVATAR_MAX_BYTES = 1.5 * 1024 * 1024;
   const COLOR_MAP = {
@@ -256,6 +257,12 @@
   function isTransferMethod(method = '') {
     const value = String(method || '').toLowerCase();
     return value === 'transfer' || value === 'qr' || value === 'promptpay';
+  }
+  function isPromptPayDynamicEnabled() {
+    return localStorage.getItem(LS_PROMPTPAY_DYNAMIC) === 'true';
+  }
+  function setPromptPayDynamicEnabled(enabled) {
+    localStorage.setItem(LS_PROMPTPAY_DYNAMIC, enabled ? 'true' : 'false');
   }
   function escapeHtml(str = '') {
     return String(str)
@@ -1359,9 +1366,24 @@
     const genArea = qs('qr-gen-area');
     const status = qs('qr-status-text');
     if (!offlineImg || !genArea || !status) return;
-    offlineImg.classList.add('hidden');
     genArea.innerHTML = '';
     status.textContent = '';
+    const isDynamicEnabled = isPromptPayDynamicEnabled();
+    offlineImg.classList.add('hidden');
+    genArea.classList.add('hidden');
+
+    if (!isDynamicEnabled) {
+      if (state.db.qrOffline) {
+        offlineImg.src = state.db.qrOffline;
+        offlineImg.classList.remove('hidden');
+        status.textContent = state.db.bank && state.db.ppay ? `${state.db.bank} • ${state.db.ppay} (Static)` : 'ใช้ QR ที่ร้านอัปไว้ (Static)';
+        return;
+      }
+      genArea.classList.remove('hidden');
+      genArea.innerHTML = '<div class="text-xs text-gray-400 font-bold text-center">ยังไม่มี QR แบบภาพนิ่ง<br>กรุณาอัปโหลดในหน้าระบบ</div>';
+      status.textContent = 'โหมด Static: ยังไม่มี QR ภาพนิ่ง';
+      return;
+    }
 
     const payload = buildPromptPayPayload(state.db.ppay, state.currentCheckoutTotal, state.db.shopName);
     const qrCanvas = generatePromptPayQrCanvas(state.db.ppay, state.currentCheckoutTotal, {
@@ -1369,9 +1391,10 @@
       height: 150,
       shopName: state.db.shopName
     });
+    genArea.classList.remove('hidden');
     if (qrCanvas && payload) {
       genArea.appendChild(qrCanvas);
-      status.textContent = `${state.db.bank || 'พร้อมเพย์'} • ${state.db.ppay}`;
+      status.textContent = `${state.db.bank || 'พร้อมเพย์'} • ${state.db.ppay} (Dynamic)`;
       return;
     }
 
@@ -1384,19 +1407,11 @@
         genArea.innerHTML = '<div class="text-xs text-gray-400 font-bold text-center">ไม่สามารถโหลด QR ออนไลน์ได้</div>';
       };
       genArea.appendChild(onlineQr);
-      status.textContent = `${state.db.bank || 'พร้อมเพย์'} • ${state.db.ppay} (Online)`;
+      status.textContent = `${state.db.bank || 'พร้อมเพย์'} • ${state.db.ppay} (Dynamic/Online)`;
       return;
     }
-
-    if (state.db.qrOffline) {
-      offlineImg.src = state.db.qrOffline;
-      offlineImg.classList.remove('hidden');
-      status.textContent = state.db.bank && state.db.ppay ? `${state.db.bank} • ${state.db.ppay}` : 'ใช้ QR ที่ร้านอัปไว้';
-      return;
-    }
-
-    genArea.innerHTML = '<div class="text-xs text-gray-400 font-bold text-center">ยังไม่มี QR<br>กรุณาอัปโหลดในหน้าระบบ</div>';
-    status.textContent = state.db.ppay && !navigator.onLine ? 'ออฟไลน์อยู่: ใช้รูป QR ที่อัปโหลดไว้' : 'ไม่มี QR พร้อมใช้งาน';
+    genArea.innerHTML = '<div class="text-xs text-gray-400 font-bold text-center">ยังไม่สามารถสร้าง QR Dynamic ได้<br>ตรวจสอบพร้อมเพย์/อินเทอร์เน็ต</div>';
+    status.textContent = state.db.ppay && !navigator.onLine ? 'โหมด Dynamic ต้องใช้อินเทอร์เน็ตสำหรับ fallback' : 'ไม่มี QR พร้อมใช้งาน';
   }
 
   function deleteOrderItem(index) {
@@ -1999,6 +2014,7 @@
     if (qs('sys-pin')) qs('sys-pin').value = state.db.adminPin || '';
     if (qs('config-unit-type')) qs('config-unit-type').value = state.db.unitType || 'โต๊ะ';
     if (qs('config-unit-count')) qs('config-unit-count').value = String(state.db.unitCount || 4);
+    if (qs('sys-promptpay-dynamic')) qs('sys-promptpay-dynamic').checked = isPromptPayDynamicEnabled();
     if (qs('system-logo-preview') && state.db.logo) qs('system-logo-preview').src = state.db.logo;
     updateRecoveryStateLabels();
   }
@@ -3999,6 +4015,22 @@
   });
   document.addEventListener('DOMContentLoaded', () => {
     _0x7d11();
+    const promptPayDynamicToggle = qs('sys-promptpay-dynamic');
+    if (promptPayDynamicToggle) {
+      promptPayDynamicToggle.addEventListener('change', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) return;
+        setPromptPayDynamicEnabled(target.checked);
+        if (qs('modal-checkout') && !qs('modal-checkout').classList.contains('hidden')) updateQrDisplay();
+      });
+    }
+    document.addEventListener('click', (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (!target.closest('#shop-queue button') && !target.closest('#checkout-payment-buttons button')) return;
+      const checkoutModal = qs('modal-checkout');
+      if (checkoutModal && !checkoutModal.classList.contains('hidden')) updateQrDisplay();
+    });
     init();
   });
   document.addEventListener('keydown', (event) => {
