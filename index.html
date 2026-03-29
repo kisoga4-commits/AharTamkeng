@@ -75,10 +75,10 @@
                 <span class="text-[11px] font-bold text-gray-400 uppercase">จัดการโต๊ะ/คิว</span>
                 <div class="text-[10px] text-gray-400 font-bold mt-1 sr-only">กดโต๊ะเพื่อรับออร์เดอร์หรือดูรายการค้าง</div>
             </div>
-            <div class="flex gap-2 bg-white p-1 rounded-xl shadow-sm border border-gray-100">
-                <button id="btn-grid-zoom-out" class="w-8 h-8 flex items-center justify-center bg-gray-50 text-gray-600 rounded-lg font-black text-lg active:scale-95">-</button>
-                <div class="w-8 h-8 flex items-center justify-center font-bold text-xs text-gray-400" id="zoom-level-text">M</div>
-                <button id="btn-grid-zoom-in" class="w-8 h-8 flex items-center justify-center bg-gray-50 text-gray-600 rounded-lg font-black text-lg active:scale-95">+</button>
+            <div class="grid-zoom-toolbar flex gap-2 bg-white p-1 rounded-xl shadow-sm border border-gray-100">
+                <button id="btn-grid-zoom-out" class="grid-zoom-btn" aria-label="ย่อขนาดการ์ด">-</button>
+                <button id="btn-grid-zoom-cycle" class="grid-zoom-btn grid-zoom-indicator" aria-label="สลับขนาดการ์ด">M</button>
+                <button id="btn-grid-zoom-in" class="grid-zoom-btn" aria-label="ขยายขนาดการ์ด">+</button>
             </div>
         </div>
         <div id="customer-grid-toolbar" class="hidden mb-3 flex justify-end">
@@ -139,32 +139,32 @@
         </div>
 
         <div id="sub-dash">
-            <div class="grid grid-cols-3 gap-3 mb-6">
-                <button id="card-stat-today" onclick="selectSalesCompareMode('today', this)" class="sales-summary-card is-active bg-emerald-500 p-4 rounded-3xl text-white text-center shadow-lg transition-all w-full">
-                    <div class="text-[10px] font-bold uppercase">วันนี้</div>
-                    <div class="text-xl font-black">฿<span id="stat-today">0</span></div>
+            <div class="sales-tabs mb-4" role="tablist" aria-label="ช่วงเวลายอดขาย">
+                <button id="card-stat-today" onclick="selectSalesCompareMode('today', this)" class="sales-summary-card is-active" role="tab" aria-selected="true">
+                    <span class="sales-tab-label">วันนี้</span>
+                    <span class="sales-tab-value">฿<span id="stat-today">0</span></span>
                 </button>
-                <button id="card-stat-week" onclick="selectSalesCompareMode('week', this)" class="sales-summary-card bg-blue-500 p-4 rounded-3xl text-white text-center shadow-lg transition-all w-full">
-                    <div class="text-[10px] font-bold uppercase">7 วัน</div>
-                    <div class="text-xl font-black">฿<span id="stat-week">0</span></div>
+                <button id="card-stat-week" onclick="selectSalesCompareMode('week', this)" class="sales-summary-card" role="tab" aria-selected="false">
+                    <span class="sales-tab-label">7 วัน</span>
+                    <span class="sales-tab-value">฿<span id="stat-week">0</span></span>
                 </button>
-                <button id="card-stat-month" onclick="selectSalesCompareMode('month', this)" class="sales-summary-card bg-purple-500 p-4 rounded-3xl text-white text-center shadow-lg transition-all w-full">
-                    <div class="text-[10px] font-bold uppercase">30 วัน</div>
-                    <div class="text-xl font-black">฿<span id="stat-month">0</span></div>
+                <button id="card-stat-month" onclick="selectSalesCompareMode('month', this)" class="sales-summary-card" role="tab" aria-selected="false">
+                    <span class="sales-tab-label">30 วัน</span>
+                    <span class="sales-tab-value">฿<span id="stat-month">0</span></span>
                 </button>
             </div>
-            <div class="grid grid-cols-3 gap-3 mb-6">
-                <div class="bg-emerald-50 p-3 rounded-2xl border border-emerald-100 text-center">
-                    <div class="text-[10px] font-bold uppercase text-emerald-700">เงินสดสะสม</div>
-                    <div class="text-lg font-black text-emerald-700">💵 ฿<span id="stat-cash-total">0</span></div>
+            <div class="sales-balance-card mb-6">
+                <div class="sales-balance-col">
+                    <div class="sales-balance-label">เงินสดสะสม</div>
+                    <div class="sales-balance-value">฿<span id="stat-cash-total">0</span></div>
                 </div>
-                <div class="bg-blue-50 p-3 rounded-2xl border border-blue-100 text-center">
-                    <div class="text-[10px] font-bold uppercase text-blue-700">โอน/QR สะสม</div>
-                    <div class="text-lg font-black text-blue-700">📱 ฿<span id="stat-transfer-total">0</span></div>
+                <div class="sales-balance-col">
+                    <div class="sales-balance-label">โอน / QR สะสม</div>
+                    <div class="sales-balance-value">฿<span id="stat-transfer-total">0</span></div>
                 </div>
-                <div class="bg-slate-50 p-3 rounded-2xl border border-slate-200 text-center">
-                    <div class="text-[10px] font-bold uppercase text-slate-700">เงินรวมสะสม</div>
-                    <div class="text-lg font-black text-slate-800">💰 ฿<span id="stat-grand-total">0</span></div>
+                <div class="sales-balance-col total">
+                    <div class="sales-balance-label">เงินรวมสะสม</div>
+                    <div class="sales-balance-value">฿<span id="stat-grand-total">0</span></div>
                 </div>
             </div>
 

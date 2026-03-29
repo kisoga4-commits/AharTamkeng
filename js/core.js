@@ -774,6 +774,7 @@
   function bindGridZoomControls() {
     const zoomInBtn = qs('btn-grid-zoom-in');
     const zoomOutBtn = qs('btn-grid-zoom-out');
+    const zoomCycleBtn = qs('btn-grid-zoom-cycle');
     if (zoomInBtn && !zoomInBtn.dataset.bound) {
       zoomInBtn.addEventListener('click', () => changeGridZoom(1));
       zoomInBtn.dataset.bound = 'true';
@@ -782,22 +783,39 @@
       zoomOutBtn.addEventListener('click', () => changeGridZoom(-1));
       zoomOutBtn.dataset.bound = 'true';
     }
+    if (zoomCycleBtn && !zoomCycleBtn.dataset.bound) {
+      zoomCycleBtn.addEventListener('click', () => {
+        const next = state.gridZoom >= 3 ? 1 : state.gridZoom + 1;
+        setGridZoom(next);
+      });
+      zoomCycleBtn.dataset.bound = 'true';
+    }
   }
 
-  function changeGridZoom(direction) {
+  function setGridZoom(level) {
     playSound('click');
-    state.gridZoom += direction;
-    if (state.gridZoom < 1) state.gridZoom = 1;
-    if (state.gridZoom > 3) state.gridZoom = 3;
+    state.gridZoom = Math.max(1, Math.min(3, Number(level) || 2));
     updateGridZoomUi();
     renderCustomerGrid();
   }
 
+  function changeGridZoom(direction) {
+    setGridZoom(state.gridZoom + direction);
+  }
+
   function updateGridZoomUi() {
     const text = qs('zoom-level-text');
+    const cycleBtn = qs('btn-grid-zoom-cycle');
     const grid = qs('grid-units');
-    if (text) text.textContent = GRID_ZOOM_LEVELS[state.gridZoom - 1] || 'M';
+    const zoomLabel = GRID_ZOOM_LEVELS[state.gridZoom - 1] || 'M';
+    if (text) text.textContent = zoomLabel;
+    if (cycleBtn) {
+      cycleBtn.textContent = zoomLabel;
+      cycleBtn.dataset.size = zoomLabel;
+      cycleBtn.setAttribute('aria-label', `ขนาดปัจจุบัน ${zoomLabel}`);
+    }
     if (!grid) return;
+    grid.dataset.size = zoomLabel;
     grid.classList.remove('grid-cols-1', 'grid-cols-2', 'grid-cols-3', 'grid-size-s', 'grid-size-m', 'grid-size-l');
     grid.classList.add(`grid-cols-${state.gridZoom}`, GRID_ZOOM_CLASS_MAP[state.gridZoom] || 'grid-size-m');
   }
@@ -871,20 +889,20 @@
           : '-';
       const thumbRows = cart.length > 0 ? cart : unit.orders;
       return `
-        <button onclick="openTable(${unit.id})" class="unit-status-ring ${statusMeta.cls} text-left p-4 rounded-[26px] border-2 shadow-sm transition active:scale-[0.98] ${getUnitCardClass(unit)}">
-          <div class="flex items-start justify-between gap-2 mb-3">
+        <button onclick="openTable(${unit.id})" class="unit-status-ring ${statusMeta.cls} unit-card-${(GRID_ZOOM_LEVELS[state.gridZoom - 1] || 'M').toLowerCase()} text-left p-4 rounded-[26px] border-2 shadow-sm transition active:scale-[0.98] ${getUnitCardClass(unit)}">
+          <div class="unit-card-head flex items-start justify-between gap-2 mb-3">
             <div>
-              <div class="text-[11px] font-bold text-gray-400 uppercase tracking-widest">${escapeHtml(state.db.unitType)}</div>
-              <div class="font-black text-3xl text-gray-800 leading-none">${unit.id}</div>
+              <div class="unit-card-type text-[11px] font-bold text-gray-400 uppercase tracking-widest">${escapeHtml(state.db.unitType)}</div>
+              <div class="unit-card-no font-black text-3xl text-gray-800 leading-none">${unit.id}</div>
             </div>
             <div class="text-right">
-              ${statusText ? `<div class="text-[11px] px-2 py-1 rounded-full font-black ${statusPillClass}" title="${statusMeta.label}">${statusText}</div>` : ''}
-              ${unit.newItemsQty > 0 ? `<div class="text-[10px] mt-2 font-black text-red-500">+${unit.newItemsQty} ใหม่</div>` : ''}
+              ${statusText ? `<div class="unit-status-pill text-[11px] px-2 py-1 rounded-full font-black ${statusPillClass}" title="${statusMeta.label}">${statusText}</div>` : ''}
+              ${unit.newItemsQty > 0 ? `<div class="unit-card-new text-[10px] mt-2 font-black text-red-500">+${unit.newItemsQty} ใหม่</div>` : ''}
             </div>
           </div>
-          <div class="text-[12px] font-black text-gray-700 mb-1">${secondary}</div>
+          <div class="unit-card-secondary text-[12px] font-black text-gray-700 mb-1">${secondary}</div>
           ${renderUnitItemThumbnails(thumbRows)}
-          <div class="flex justify-end items-center text-[10px] text-gray-500 font-bold">
+          <div class="unit-card-meta flex justify-end items-center text-[10px] text-gray-500 font-bold">
             <span>${unit.orders.length > 0 ? `${unit.orders.reduce((s, o) => s + o.qty, 0)} รายการ` : `${cart.length} ตะกร้า`}</span>
           </div>
         </button>
@@ -1596,8 +1614,12 @@
   function renderSalesCompare() {
     const data = getSalesCompareData(state.activeSalesCompare);
     const cardId = state.activeSalesCompare === 'week' ? 'card-stat-week' : state.activeSalesCompare === 'month' ? 'card-stat-month' : 'card-stat-today';
-    document.querySelectorAll('.sales-summary-card').forEach((card) => card.classList.remove('is-active'));
+    document.querySelectorAll('.sales-summary-card').forEach((card) => {
+      card.classList.remove('is-active');
+      card.setAttribute('aria-selected', 'false');
+    });
     qs(cardId)?.classList?.add('is-active');
+    qs(cardId)?.setAttribute('aria-selected', 'true');
     const title = qs('sales-compare-title');
     const range = qs('sales-compare-range');
     const chip = qs('sales-compare-change');
@@ -1624,8 +1646,12 @@
 
 
     state.activeSalesCompare = mode;
-    document.querySelectorAll('.sales-summary-card').forEach((card) => card.classList.remove('is-active'));
+    document.querySelectorAll('.sales-summary-card').forEach((card) => {
+      card.classList.remove('is-active');
+      card.setAttribute('aria-selected', 'false');
+    });
     element?.classList?.add('is-active');
+    element?.setAttribute('aria-selected', 'true');
     renderSalesCompare();
     openSalesInsight(mode);
   }

@@ -1374,3 +1374,131 @@ hr {
     min-height: calc(100vh - 28px);
   }
 }
+
+/* ===== Modern compact dashboard + table management refresh ===== */
+.grid-zoom-toolbar {
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(8px);
+}
+
+.grid-zoom-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 1.05rem;
+  font-weight: 900;
+  transition: all .2s ease;
+}
+
+.grid-zoom-btn:active {
+  transform: scale(.95);
+}
+
+.grid-zoom-indicator[data-size="S"] { background: #eff6ff; color: #1d4ed8; }
+.grid-zoom-indicator[data-size="M"] { background: #f0fdf4; color: #166534; }
+.grid-zoom-indicator[data-size="L"] { background: #fef3c7; color: #92400e; }
+
+.sales-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+  padding: 6px;
+}
+
+.sales-summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
+  justify-content: center;
+  min-height: 62px;
+  border-radius: 13px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #64748b;
+}
+
+.sales-tab-label { font-size: 11px; font-weight: 800; }
+.sales-tab-value { font-size: 16px; font-weight: 900; line-height: 1.1; color: #0f172a; }
+
+.sales-summary-card.is-active {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  color: #0f172a;
+  border-color: #dbe4ee;
+  outline: none;
+  transform: translateY(-1px);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.1) !important;
+}
+
+.sales-balance-card {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  overflow: hidden;
+}
+
+.sales-balance-col {
+  padding: 12px 10px;
+  text-align: center;
+  border-right: 1px solid #edf2f7;
+}
+
+.sales-balance-col:last-child { border-right: 0; }
+.sales-balance-label { font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase; }
+.sales-balance-value { font-size: 19px; line-height: 1.1; font-weight: 900; color: #1e293b; margin-top: 4px; }
+.sales-balance-col.total .sales-balance-value { color: #0f766e; }
+
+/* table sizes */
+#grid-units.grid-size-s {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 8px;
+}
+#grid-units.grid-size-m {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 10px;
+}
+#grid-units.grid-size-l {
+  grid-template-columns: repeat(1, minmax(0, 1fr)) !important;
+  gap: 12px;
+}
+
+#grid-units.grid-size-s > .unit-status-ring {
+  min-height: 84px;
+  border-radius: 16px;
+  padding: 8px;
+  box-shadow: none;
+}
+
+#grid-units.grid-size-s .unit-card-head { margin: 0; display: block; }
+#grid-units.grid-size-s .unit-card-type,
+#grid-units.grid-size-s .unit-card-secondary,
+#grid-units.grid-size-s .unit-card-meta,
+#grid-units.grid-size-s .unit-item-thumbs,
+#grid-units.grid-size-s .unit-status-pill,
+#grid-units.grid-size-s .unit-card-new { display: none !important; }
+#grid-units.grid-size-s .unit-card-no { font-size: 1.6rem; text-align: center; line-height: 1; margin-top: 8px; color: #0f172a; }
+#grid-units.grid-size-s .unit-status-ring.status-idle { background: #dcfce7 !important; }
+#grid-units.grid-size-s .unit-status-ring.status-active { background: #fee2e2 !important; }
+#grid-units.grid-size-s .unit-status-ring.status-draft { background: #fef3c7 !important; }
+
+#grid-units.grid-size-m > .unit-status-ring { min-height: 118px; border-radius: 18px; padding: 10px; }
+#grid-units.grid-size-m .unit-item-thumbs,
+#grid-units.grid-size-m .unit-card-meta { display: none; }
+#grid-units.grid-size-m .unit-card-no { font-size: 2rem; }
+
+#grid-units.grid-size-l > .unit-status-ring { min-height: 160px; border-radius: 24px; }
+
+@media (max-width: 767px) {
+  #grid-units.grid-size-s { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+  .sales-balance-card { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .sales-balance-value { font-size: 15px; }
+}
