@@ -1,25 +1,34 @@
-import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js';
-import { getDatabase, ref, get } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-database.js';
+(() => {
+  'use strict';
 
-const firebaseConfig = {
-  apiKey: 'AIzaSyC4jOmVcZp0HmmDqZCmHufnq2yyoPcvyVM',
-  authDomain: 'pakdu-a26c4.firebaseapp.com',
-  databaseURL: 'https://pakdu-a26c4-default-rtdb.asia-southeast1.firebasedatabase.app',
-  projectId: 'pakdu-a26c4',
-  storageBucket: 'pakdu-a26c4.firebasestorage.app',
-  messagingSenderId: '414809008203',
-  appId: '1:414809008203:web:757dceafa78d91900d85ce'
-};
+  // Offline-first build: keep compatibility surface without hard dependency on Firebase CDN.
+  const disabledApi = {
+    readSyncMeta: async () => null,
+    writeSyncMeta: async () => false,
+    writeSnapshot: async () => false,
+    readSnapshot: async () => null,
+    listenSyncMeta: () => () => {},
+    listenJoinRequests: () => () => {},
+    listenClientApprovals: () => () => {},
+    listenOperations: () => () => {},
+    pushOperation: async () => false,
+    requestJoin: async () => false,
+    approveClient: async () => false,
+    rejectClient: async () => false,
+    removeClient: async () => false
+  };
 
-const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
-const db = getDatabase(app);
+  window.FakduFirebase = {
+    ready: false,
+    reason: 'offline-first build: Firebase disabled by default'
+  };
 
-window.FakduFirebase = {
-  ready: true,
-  app,
-  db,
-  ref,
-  get
-};
+  window.FakduSync = {
+    ready: false,
+    resolveApi() {
+      return disabledApi;
+    }
+  };
 
-export { app, db, firebaseConfig };
+  console.info('[FAKDU][SYNC] Firebase runtime is disabled (offline-first mode).');
+})();

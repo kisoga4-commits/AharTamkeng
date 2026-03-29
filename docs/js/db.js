@@ -40,6 +40,8 @@
   const LEGACY_PENDING_SHOP_ID = 'FAKDU_PENDING_MASTER_SHOP_ID';
   const LEGACY_PENDING_PAIR_REQUEST_ID = 'FAKDU_PENDING_PAIR_REQUEST_ID';
   const LEGACY_FORCE_CLIENT_MODE = 'FAKDU_FORCE_CLIENT_MODE';
+  const LS_FALLBACK_KV_PREFIX = 'FAKDU_IDB_FALLBACK_KV:';
+  const LS_FALLBACK_META_PREFIX = 'FAKDU_IDB_FALLBACK_META:';
 
   function hasIndexedDB() {
     return typeof indexedDB !== 'undefined';
@@ -89,6 +91,34 @@
   }
 
   let dbPromise = null;
+  let usingLocalFallback = false;
+
+  function localFallbackGet(prefix, key) {
+    try {
+      const raw = localStorage.getItem(`${prefix}${key}`);
+      return safeParse(raw, raw);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function localFallbackSet(prefix, key, value) {
+    try {
+      localStorage.setItem(`${prefix}${key}`, JSON.stringify(value));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function localFallbackDelete(prefix, key) {
+    try {
+      localStorage.removeItem(`${prefix}${key}`);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
 
   function openIndexedDB() {
     if (!hasIndexedDB()) {
@@ -158,39 +188,77 @@
   }
 
   async function kvGet(key) {
-    return withStore(STORE_KV, 'readonly', async (store) => idbRequestToPromise(store.get(key)));
+    if (usingLocalFallback) return localFallbackGet(LS_FALLBACK_KV_PREFIX, key);
+    try {
+      return await withStore(STORE_KV, 'readonly', async (store) => idbRequestToPromise(store.get(key)));
+    } catch (error) {
+      usingLocalFallback = true;
+      console.warn('[FAKDU DB] IndexedDB read failed, fallback to localStorage', error);
+      return localFallbackGet(LS_FALLBACK_KV_PREFIX, key);
+    }
   }
 
   async function kvSet(key, value) {
-    return withStore(STORE_KV, 'readwrite', async (store) => {
-      await idbRequestToPromise(store.put(value, key));
-      return true;
-    });
+    if (usingLocalFallback) return localFallbackSet(LS_FALLBACK_KV_PREFIX, key, value);
+    try {
+      return await withStore(STORE_KV, 'readwrite', async (store) => {
+        await idbRequestToPromise(store.put(value, key));
+        return true;
+      });
+    } catch (error) {
+      usingLocalFallback = true;
+      console.warn('[FAKDU DB] IndexedDB write failed, fallback to localStorage', error);
+      return localFallbackSet(LS_FALLBACK_KV_PREFIX, key, value);
+    }
   }
 
   async function kvDelete(key) {
-    return withStore(STORE_KV, 'readwrite', async (store) => {
-      await idbRequestToPromise(store.delete(key));
-      return true;
-    });
+    if (usingLocalFallback) return localFallbackDelete(LS_FALLBACK_KV_PREFIX, key);
+    try {
+      return await withStore(STORE_KV, 'readwrite', async (store) => {
+        await idbRequestToPromise(store.delete(key));
+        return true;
+      });
+    } catch (_) {
+      usingLocalFallback = true;
+      return localFallbackDelete(LS_FALLBACK_KV_PREFIX, key);
+    }
   }
 
   async function metaGet(key) {
-    return withStore(STORE_META, 'readonly', async (store) => idbRequestToPromise(store.get(key)));
+    if (usingLocalFallback) return localFallbackGet(LS_FALLBACK_META_PREFIX, key);
+    try {
+      return await withStore(STORE_META, 'readonly', async (store) => idbRequestToPromise(store.get(key)));
+    } catch (_) {
+      usingLocalFallback = true;
+      return localFallbackGet(LS_FALLBACK_META_PREFIX, key);
+    }
   }
 
   async function metaSet(key, value) {
-    return withStore(STORE_META, 'readwrite', async (store) => {
-      await idbRequestToPromise(store.put(value, key));
-      return true;
-    });
+    if (usingLocalFallback) return localFallbackSet(LS_FALLBACK_META_PREFIX, key, value);
+    try {
+      return await withStore(STORE_META, 'readwrite', async (store) => {
+        await idbRequestToPromise(store.put(value, key));
+        return true;
+      });
+    } catch (_) {
+      usingLocalFallback = true;
+      return localFallbackSet(LS_FALLBACK_META_PREFIX, key, value);
+    }
   }
 
   async function metaDelete(key) {
-    return withStore(STORE_META, 'readwrite', async (store) => {
-      await idbRequestToPromise(store.delete(key));
-      return true;
-    });
+    if (usingLocalFallback) return localFallbackDelete(LS_FALLBACK_META_PREFIX, key);
+    try {
+      return await withStore(STORE_META, 'readwrite', async (store) => {
+        await idbRequestToPromise(store.delete(key));
+        return true;
+      });
+    } catch (_) {
+      usingLocalFallback = true;
+      return localFallbackDelete(LS_FALLBACK_META_PREFIX, key);
+    }
   }
 
   async function requestPersistentStorage() {
@@ -561,6 +629,24 @@
     return estimateStorage();
   }
 
+  async function healthCheck() {
+    const report = {
+      ok: true,
+      storage: 'indexeddb',
+      deviceId: '',
+      error: ''
+    };
+    try {
+      await bootstrap();
+      report.deviceId = await getDeviceId();
+      report.storage = usingLocalFallback ? 'localstorage-fallback' : 'indexeddb';
+    } catch (error) {
+      report.ok = false;
+      report.error = error?.message || String(error);
+    }
+    return report;
+  }
+
   const api = {
     APP_VERSION,
     DB_NAME,
@@ -600,6 +686,7 @@
     importBackup,
     wipeClientLocal,
     getStorageInfo,
+    healthCheck,
     requestPersistentStorage,
     estimateStorage,
     getDeviceId,

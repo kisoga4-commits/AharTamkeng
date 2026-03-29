@@ -1,14 +1,13 @@
-// sw.js - Service Worker (FAKDU v9.46)
+// sw.js - FAKDU Offline-First App Shell
+const SW_VERSION = '10.30.0';
+const APP_SHELL_CACHE = `fakdu-app-shell-v${SW_VERSION}`;
+const RUNTIME_CACHE = `fakdu-runtime-v${SW_VERSION}`;
+const OFFLINE_FALLBACK_URL = './offline.html';
 
-const SW_VERSION = '9.48.2';
-const CACHE_NAME = `fakdu-cache-v${SW_VERSION}`;
-const META_CACHE_NAME = `fakdu-cache-meta-v${SW_VERSION}`;
-const CACHE_MAX_AGE_MS = 60 * 24 * 60 * 60 * 1000;
-let lastCleanupAt = 0;
-
-const ASSETS_TO_CACHE = [
+const APP_SHELL = [
   './',
   './index.html',
+  './offline.html',
   './style.css',
   './manifest.json',
   './icon.png',
@@ -19,107 +18,70 @@ const ASSETS_TO_CACHE = [
 ];
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    Promise.all([
-      caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS_TO_CACHE)),
-      caches.open(META_CACHE_NAME)
-    ])
-  );
-  self.skipWaiting();
+  event.waitUntil((async () => {
+    const cache = await caches.open(APP_SHELL_CACHE);
+    await cache.addAll(APP_SHELL);
+    await self.skipWaiting();
+  })());
 });
-
-async function stampCacheEntry(request) {
-  const metaCache = await caches.open(META_CACHE_NAME);
-  await metaCache.put(request.url, new Response(String(Date.now())));
-}
-
-async function cleanupExpiredCacheEntries() {
-  const [dataCache, metaCache] = await Promise.all([
-    caches.open(CACHE_NAME),
-    caches.open(META_CACHE_NAME)
-  ]);
-  const [requests, metaRequests] = await Promise.all([
-    dataCache.keys(),
-    metaCache.keys()
-  ]);
-  const now = Date.now();
-  await Promise.all(requests.map(async (request) => {
-    const metaResponse = await metaCache.match(request.url);
-    const cachedAt = Number((await metaResponse?.text?.()) || 0);
-    if (!cachedAt || (now - cachedAt) > CACHE_MAX_AGE_MS) {
-      await Promise.all([
-        dataCache.delete(request),
-        metaCache.delete(request.url)
-      ]);
-    }
-  }));
-  const urlSet = new Set(requests.map((request) => request.url));
-  await Promise.all(metaRequests
-    .filter((request) => !urlSet.has(request.url))
-    .map((request) => metaCache.delete(request)));
-}
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then(async (names) => {
-      await Promise.all(
-        names
-          .filter((name) => name !== CACHE_NAME && name !== META_CACHE_NAME)
-          .map((name) => caches.delete(name))
-      );
-      await cleanupExpiredCacheEntries();
-    })
-  );
-  self.clients.claim();
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(
+      keys
+        .filter((key) => ![APP_SHELL_CACHE, RUNTIME_CACHE].includes(key))
+        .map((key) => caches.delete(key))
+    );
+    await self.clients.claim();
+  })());
 });
+
+async function networkFirstForNavigation(request) {
+  const shellCache = await caches.open(APP_SHELL_CACHE);
+  try {
+    const networkResponse = await fetch(request);
+    if (networkResponse && networkResponse.ok) {
+      await shellCache.put('./index.html', networkResponse.clone());
+    }
+    return networkResponse;
+  } catch (_) {
+    return (await shellCache.match('./index.html'))
+      || (await shellCache.match(OFFLINE_FALLBACK_URL))
+      || new Response('Offline', { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+  }
+}
+
+async function cacheFirstForStaticAssets(request) {
+  const cached = await caches.match(request);
+  if (cached) return cached;
+  try {
+    const response = await fetch(request);
+    if (response && response.ok) {
+      const runtime = await caches.open(RUNTIME_CACHE);
+      await runtime.put(request, response.clone());
+    }
+    return response;
+  } catch (_) {
+    if (request.mode === 'navigate') {
+      const shell = await caches.open(APP_SHELL_CACHE);
+      return (await shell.match(OFFLINE_FALLBACK_URL))
+        || (await shell.match('./index.html'))
+        || new Response('Offline', { status: 503 });
+    }
+    return new Response('', { status: 504, statusText: 'Offline' });
+  }
+}
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+  const url = new URL(event.request.url);
+  if (url.origin !== self.location.origin) return;
 
-  const requestUrl = new URL(event.request.url);
-  if (requestUrl.origin !== self.location.origin) return;
-  if ((Date.now() - lastCleanupAt) > (12 * 60 * 60 * 1000)) {
-    lastCleanupAt = Date.now();
-    event.waitUntil(cleanupExpiredCacheEntries().catch(() => {}));
+  if (event.request.mode === 'navigate') {
+    event.respondWith(networkFirstForNavigation(event.request));
+    return;
   }
 
-  event.respondWith((async () => {
-    const cached = await caches.match(event.request);
-    const isNavigation = event.request.mode === 'navigate';
-
-    if (isNavigation) {
-      if (cached) return cached;
-      try {
-        const networkResponse = await fetch(event.request);
-        if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
-          const cache = await caches.open(CACHE_NAME);
-          await cache.put(event.request, networkResponse.clone());
-          stampCacheEntry(event.request).catch(() => {});
-        }
-        return networkResponse;
-      } catch (_) {
-        const fallback = await caches.match('./index.html')
-          || await caches.match('/FAKDU3/index.html')
-          || await caches.match('./');
-        if (fallback) return fallback;
-        return new Response(
-          '<!doctype html><html><body style="font-family:sans-serif;padding:16px">Offline และยังไม่มี cache หน้าเริ่มต้น</body></html>',
-          { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
-        );
-      }
-    }
-
-    if (cached) return cached;
-    try {
-      const response = await fetch(event.request);
-      if (response && response.status === 200 && response.type === 'basic') {
-        const cache = await caches.open(CACHE_NAME);
-        await cache.put(event.request, response.clone());
-        stampCacheEntry(event.request).catch(() => {});
-      }
-      return response;
-    } catch (_) {
-      return new Response('', { status: 504, statusText: 'Offline' });
-    }
-  })());
+  event.respondWith(cacheFirstForStaticAssets(event.request));
 });
