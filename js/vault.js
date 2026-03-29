@@ -12,8 +12,14 @@
   const IDB_KEY_INSTALL_ID = 'vault_install_id';
   const IDB_KEY_STORED_LICENSE = 'vault_stored_license';
 
-  // Client must contain public key only. Put real SPKI PEM here later.
+  // Client must contain public key only (SPKI PEM). Replace with your owner public key.
   const PUBLIC_KEY_PEM_PLACEHOLDER = 'REPLACE_WITH_REAL_PUBLIC_KEY_PEM';
+  const DEFAULT_PUBLIC_KEY_PEM = `-----BEGIN PUBLIC KEY-----
+MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCoQkmRYHzk0L3XWj6DSUaC57z/
+3dj0tmVrhZgqV7J5UhTFefe5Qe/t+TDMAY42J1q36kOjJi5L4j3GhxUl9sU1uZOV
+gc5p4OxooqzaYadsCa1k6wT6ib3c2LHIwKKN0Gy/e/goU2R6PDE57W3Qh/eNSQoT
+1HetSsx7a9kxBampJwIDAQAB
+-----END PUBLIC KEY-----`;
 
   function now() { return Date.now(); }
   function clone(value) { return value == null ? value : JSON.parse(JSON.stringify(value)); }
@@ -200,7 +206,8 @@
 
   function getConfiguredPublicKeyPem() {
     const configured = String(window.FAKDU_VAULT_PUBLIC_KEY_PEM || '').trim();
-    return configured || PUBLIC_KEY_PEM_PLACEHOLDER;
+    if (configured) return configured;
+    return DEFAULT_PUBLIC_KEY_PEM || PUBLIC_KEY_PEM_PLACEHOLDER;
   }
 
   async function importPublicKey() {
@@ -331,11 +338,11 @@
       db.vault.note = 'license ไม่ตรงร้านนี้';
       return { valid: false, message: 'license ไม่ตรงร้านนี้' };
     }
-    if (Number(payload.exp || 0) > 0 && now() > Number(payload.exp)) {
+    if (!Number.isFinite(Number(payload.issuedAt)) || Number(payload.issuedAt) <= 0) {
       db.licenseActive = false;
-      db.vault.status = 'expired';
-      db.vault.note = 'license หมดอายุ';
-      return { valid: false, message: 'license หมดอายุ' };
+      db.vault.status = 'invalid';
+      db.vault.note = 'license ไม่มี issuedAt ที่ถูกต้อง';
+      return { valid: false, message: 'license ไม่มี issuedAt ที่ถูกต้อง' };
     }
 
     const sigCheck = await verifyGenkeySignature(license.payloadEncoded, license.signatureEncoded);
@@ -397,7 +404,9 @@
     if (!sigCheck.ok) return { valid: false, message: sigCheck.message };
 
     if (normalizeShopId(payload.shopId) !== sid) return { valid: false, message: 'GENKEY ไม่ตรงร้านนี้' };
-    if (Number(payload.exp || 0) > 0 && now() > Number(payload.exp)) return { valid: false, message: 'GENKEY หมดอายุแล้ว' };
+    if (!Number.isFinite(Number(payload.issuedAt)) || Number(payload.issuedAt) <= 0) {
+      return { valid: false, message: 'GENKEY ไม่มี issuedAt ที่ถูกต้อง' };
+    }
 
     const activatedAt = now();
     await saveLicense({

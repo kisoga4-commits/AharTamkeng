@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FAKDU Owner GENKEY Tool (Offline)</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; max-width: 760px; margin: 24px auto; padding: 0 16px; background: #f7f7f8; color: #111; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 14px; padding: 16px; margin-bottom: 14px; }
+    input, textarea, button { width: 100%; box-sizing: border-box; font-size: 14px; }
+    input, textarea { padding: 10px; border: 1px solid #d1d5db; border-radius: 10px; }
+    textarea { min-height: 140px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    button { padding: 11px 14px; border: 0; border-radius: 10px; font-weight: 700; cursor: pointer; background: #111827; color: #fff; }
+    .muted { color: #6b7280; font-size: 12px; }
+    .row { display: grid; gap: 10px; }
+  </style>
+</head>
+<body>
+  <h1>🔐 FAKDU Owner GENKEY Tool</h1>
+  <p class="muted">ใช้เฉพาะฝั่ง owner เท่านั้น • ทำงาน offline ได้ • ห้ามนำ Private Key ไปไว้ในแอปลูกค้า</p>
+
+  <div class="card row">
+    <label>Shop ID</label>
+    <input id="shopId" placeholder="เช่น SHOP-ABC-001" />
+
+    <label>Private Key (PEM, PKCS#8)</label>
+    <textarea id="privateKeyPem" placeholder="-----BEGIN PRIVATE KEY----- ..."></textarea>
+    <input id="privateKeyFile" type="file" accept=".pem,.key,.txt" />
+
+    <button id="btnGenerate">สร้าง GENKEY</button>
+    <p id="status" class="muted"></p>
+  </div>
+
+  <div class="card row">
+    <label>GENKEY</label>
+    <textarea id="genkey" readonly></textarea>
+    <button id="btnCopy" type="button">คัดลอก GENKEY</button>
+  </div>
+
+  <script>
+    function normalizeShopId(value = '') {
+      return String(value || '')
+        .trim()
+        .toUpperCase()
+        .replace(/[^A-Z0-9_-]/g, '-')
+        .replace(/-{2,}/g, '-')
+        .replace(/^-+|-+$/g, '');
+    }
+
+    function b64urlEncodeBytes(bytes) {
+      let raw = '';
+      const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+      for (let i = 0; i < arr.length; i += 1) raw += String.fromCharCode(arr[i]);
+      return btoa(raw).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+    }
+
+    function b64urlEncodeUtf8(text = '') {
+      return b64urlEncodeBytes(new TextEncoder().encode(String(text)));
+    }
+
+    function pemToArrayBuffer(pem = '') {
+      const base64 = String(pem)
+        .replace(/-----BEGIN [^-]+-----/g, '')
+        .replace(/-----END [^-]+-----/g, '')
+        .replace(/\s+/g, '');
+      const raw = atob(base64);
+      const out = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i += 1) out[i] = raw.charCodeAt(i);
+      return out.buffer;
+    }
+
+    async function importPrivateKey(pem) {
+      return crypto.subtle.importKey(
+        'pkcs8',
+        pemToArrayBuffer(pem),
+        { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+        false,
+        ['sign']
+      );
+    }
+
+    async function generateGenkey() {
+      const status = document.getElementById('status');
+      const shopRaw = document.getElementById('shopId').value;
+      const shopId = normalizeShopId(shopRaw);
+      if (!shopId) {
+        status.textContent = '❌ shopId ไม่ถูกต้อง';
+        return;
+      }
+      const pem = document.getElementById('privateKeyPem').value.trim();
+      if (!pem) {
+        status.textContent = '❌ ใส่ Private Key ก่อน';
+        return;
+      }
+
+      const payload = {
+        typ: 'fakdu_license',
+        app: 'FAKDU',
+        shopId,
+        pro: true,
+        lifetime: true,
+        issuedAt: Date.now()
+      };
+
+      try {
+        const privateKey = await importPrivateKey(pem);
+        const payloadEncoded = b64urlEncodeUtf8(JSON.stringify(payload));
+        const signature = await crypto.subtle.sign(
+          'RSASSA-PKCS1-v1_5',
+          privateKey,
+          new TextEncoder().encode(payloadEncoded)
+        );
+        const signatureEncoded = b64urlEncodeBytes(new Uint8Array(signature));
+        document.getElementById('genkey').value = `${payloadEncoded}.${signatureEncoded}`;
+        status.textContent = '✅ สร้าง GENKEY สำเร็จ';
+      } catch (error) {
+        status.textContent = `❌ สร้าง GENKEY ไม่สำเร็จ: ${error.message || error}`;
+      }
+    }
+
+    document.getElementById('privateKeyFile').addEventListener('change', async (event) => {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+      const text = await file.text();
+      document.getElementById('privateKeyPem').value = text;
+    });
+
+    document.getElementById('btnGenerate').addEventListener('click', generateGenkey);
+    document.getElementById('btnCopy').addEventListener('click', async () => {
+      const value = document.getElementById('genkey').value;
+      if (!value) return;
+      try {
+        await navigator.clipboard.writeText(value);
+        document.getElementById('status').textContent = '✅ คัดลอก GENKEY แล้ว';
+      } catch (_) {
+        document.getElementById('status').textContent = '⚠️ คัดลอกอัตโนมัติไม่สำเร็จ กรุณาคัดลอกเอง';
+      }
+    });
+  </script>
+</body>
+</html>
