@@ -5,6 +5,7 @@
   const LS_INSTALL_ID = 'FAKDU_VAULT_INSTALL_ID';
   const LS_SHOP_ID = 'FAKDU_VAULT_SHOP_ID';
   const LS_LICENSE = 'FAKDU_VAULT_GENKEY';
+  const LS_PRO_UNLOCKED = 'FAKDU_PRO_UNLOCKED';
 
   function now() {
     return Date.now();
@@ -90,12 +91,21 @@
     return installId;
   }
 
-  async function ensureShopId(db, requestedShopId = '') {
-    ensureDbShape(db);
-    const preferred = normalizeShopId(requestedShopId || db?.shopId || localStorage.getItem(LS_SHOP_ID) || '');
-    const sid = preferred || `SHOP-${randomString(8)}`;
-    if (db) db.shopId = sid;
-    localStorage.setItem(LS_SHOP_ID, sid);
+  function getShopIdFromUnlockUi() {
+    const el = document.getElementById('display-hwid');
+    const uiShopId = normalizeShopId(el?.textContent || '');
+    return uiShopId || '';
+  }
+
+  function getCurrentShopId({ db = {}, shopId = '' } = {}) {
+    const sid = normalizeShopId(
+      shopId
+      || getShopIdFromUnlockUi()
+      || db?.shopId
+      || localStorage.getItem(LS_SHOP_ID)
+      || ''
+    );
+    if (sid) localStorage.setItem(LS_SHOP_ID, sid);
     return sid;
   }
 
@@ -118,17 +128,22 @@
     throw new Error('ไม่พบ databaseURL จาก firebase-init.js');
   }
 
-  async function verifyLicense(shopId, licenseCode) {
-    const sid = normalizeShopId(shopId);
-    const code = normalizeLicenseCode(licenseCode);
+  async function verifyLicenseDetail(inputCode = '', { db = {}, shopId = '' } = {}) {
+    const sid = getCurrentShopId({ db, shopId });
+    const code = normalizeLicenseCode(inputCode);
 
-    if (!sid || !code) return false;
+    if (!sid) {
+      return { valid: false, message: 'ไม่พบ SHOP ID ของร้านนี้' };
+    }
+    if (!code) {
+      return { valid: false, message: 'กรอกรหัสปลดล็อกก่อน' };
+    }
 
     let firebaseRuntime;
     try {
       firebaseRuntime = await waitFirebaseReady();
     } catch (_) {
-      return false;
+      return { valid: false, message: 'ระบบเชื่อม Firebase ยังไม่พร้อม' };
     }
 
     try {
@@ -146,22 +161,33 @@
           method: 'GET',
           cache: 'no-store'
         });
-        if (!response.ok) return false;
+        if (!response.ok) return { valid: false, message: 'อ่านข้อมูลใบอนุญาตไม่สำเร็จ' };
         licenseDoc = await response.json();
       }
 
-      if (!licenseDoc || typeof licenseDoc !== 'object') return false;
-      if (licenseDoc.active !== true) return false;
-      if (String(licenseDoc.licenseCode || '') !== code) return false;
+      if (!licenseDoc || typeof licenseDoc !== 'object') {
+        return { valid: false, message: `ไม่พบ license ของร้าน ${sid}` };
+      }
+      if (licenseDoc.active !== true) {
+        return { valid: false, message: 'license นี้ยังไม่ active' };
+      }
+      if (String(licenseDoc.licenseCode || '') !== code) {
+        return { valid: false, message: 'รหัสปลดล็อกไม่ถูกต้อง' };
+      }
 
-      return true;
+      return { valid: true, message: 'ตรวจสอบ license ผ่าน' };
     } catch (_) {
-      return false;
+      return { valid: false, message: 'เกิดข้อผิดพลาดระหว่างตรวจสอบ license' };
     }
   }
 
+  async function verifyLicense(inputCode = '', context = {}) {
+    const result = await verifyLicenseDetail(inputCode, context);
+    return Boolean(result.valid);
+  }
+
   async function checkLicenseFromRealtimeDb({ shopId = '', licenseCode = '' } = {}) {
-    const sid = normalizeShopId(shopId);
+    const sid = getCurrentShopId({ shopId });
     const code = normalizeLicenseCode(licenseCode);
 
     if (!sid) {
@@ -171,9 +197,9 @@
       return { valid: false, message: 'กรอกรหัส license ก่อน' };
     }
 
-    const valid = await verifyLicense(sid, code);
-    if (!valid) {
-      return { valid: false, message: 'license ไม่ถูกต้องหรือยังไม่ active' };
+    const verifyResult = await verifyLicenseDetail(code, { shopId: sid });
+    if (!verifyResult.valid) {
+      return { valid: false, message: verifyResult.message };
     }
 
     return {
@@ -190,7 +216,8 @@
 
   async function getActivationRequest({ shopId = '', deviceId = '', db = {} } = {}) {
     ensureDbShape(db);
-    const sid = await ensureShopId(db, shopId);
+    const sid = getCurrentShopId({ db, shopId });
+    if (!sid) return { ok: false, message: 'ไม่พบ SHOP ID ของร้านนี้' };
     const installId = await getInstallId(deviceId);
     const request = {
       type: 'fakdu_license_check',
@@ -211,7 +238,11 @@
 
   async function validateProKey({ key = '', shopId = '', deviceId = '', db = {} } = {}) {
     ensureDbShape(db);
-    const sid = await ensureShopId(db, shopId);
+    const sid = getCurrentShopId({ db, shopId });
+    if (!sid) {
+      db.licenseActive = false;
+      return { valid: false, message: 'ไม่พบ SHOP ID ของร้านนี้' };
+    }
     const installId = await getInstallId(deviceId);
     const code = normalizeLicenseCode(key);
 
@@ -238,6 +269,7 @@
     db.vault.features = ['all'];
 
     localStorage.setItem(LS_LICENSE, code);
+    localStorage.setItem(LS_PRO_UNLOCKED, 'true');
 
     return {
       valid: true,
@@ -260,8 +292,16 @@
 
   async function isProActive(db = {}) {
     ensureDbShape(db);
-    const sid = await ensureShopId(db);
+    const sid = getCurrentShopId({ db });
     const installId = await getInstallId();
+    if (!sid) {
+      db.licenseActive = false;
+      db.vault.installId = installId;
+      db.vault.status = 'invalid';
+      db.vault.note = 'ไม่พบ SHOP ID ของร้านนี้';
+      localStorage.removeItem(LS_PRO_UNLOCKED);
+      return false;
+    }
     const code = normalizeLicenseCode(db.licenseToken || localStorage.getItem(LS_LICENSE) || '');
 
     if (!code) {
@@ -269,6 +309,7 @@
       db.vault.installId = installId;
       db.vault.status = 'idle';
       db.vault.note = 'ยังไม่มี licenseCode';
+      localStorage.removeItem(LS_PRO_UNLOCKED);
       return false;
     }
 
@@ -281,6 +322,7 @@
       db.licenseActive = false;
       db.vault.status = 'invalid';
       db.vault.note = result.message || 'license ไม่ผ่านการตรวจสอบ';
+      localStorage.removeItem(LS_PRO_UNLOCKED);
       return false;
     }
 
@@ -292,6 +334,7 @@
     db.vault.plan = 'pro';
     db.vault.features = ['all'];
     localStorage.setItem(LS_LICENSE, code);
+    localStorage.setItem(LS_PRO_UNLOCKED, 'true');
     return true;
   }
 
@@ -311,6 +354,7 @@
     };
 
     localStorage.removeItem(LS_LICENSE);
+    localStorage.removeItem(LS_PRO_UNLOCKED);
     return { ok: true };
   }
 
@@ -359,7 +403,7 @@
 
   async function getStatus(db = {}) {
     ensureDbShape(db);
-    const sid = await ensureShopId(db);
+    const sid = getCurrentShopId({ db });
     return {
       appVersion: APP_VERSION,
       shopId: sid,
@@ -377,6 +421,7 @@
   window.FakduVault = {
     APP_VERSION,
     normalizeShopId,
+    getCurrentShopId,
     verifyLicense,
     getActivationRequest,
     createGenKey,

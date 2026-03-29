@@ -1,4 +1,4 @@
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js';
+import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js';
 import { getDatabase, ref, get } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-database.js';
 
 const firebaseConfig = {
@@ -11,7 +11,7 @@ const firebaseConfig = {
   appId: '1:414809008203:web:757dceafa78d91900d85ce'
 };
 
-const app = initializeApp(firebaseConfig);
+const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
 window.FakduFirebase = {
