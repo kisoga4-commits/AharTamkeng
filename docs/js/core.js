@@ -217,6 +217,14 @@
   function getUnitLabel(id) {
     return `${state.db.unitType || 'โต๊ะ'} ${id}`;
   }
+  function persistDbSyncToLegacyStorage() {
+    try {
+      localStorage.setItem('FAKDU_DB_V946', JSON.stringify(state.db));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
   function getActorLabel() {
     if (IS_CLIENT_NODE) return 'client';
     return state.isAdminLoggedIn ? 'admin' : 'staff';
@@ -576,6 +584,7 @@
 
   //* save/load open
   async function saveDb({ render = true } = {}) {
+    persistDbSyncToLegacyStorage();
     clearTimeout(state.autoSaveTimer);
     state.autoSaveTimer = setTimeout(async () => {
       const dbApi = resolveDbApi();
@@ -3979,6 +3988,12 @@
     if (IS_CLIENT_NODE) flushClientOpQueue();
   });
   window.addEventListener('offline', updateMasterConnectionUi);
+  window.addEventListener('pagehide', () => {
+    persistDbSyncToLegacyStorage();
+  });
+  window.addEventListener('beforeunload', () => {
+    persistDbSyncToLegacyStorage();
+  });
   window.addEventListener('storage', (event) => {
     if (!IS_CLIENT_NODE || !event.key || !event.newValue) return;
     if (!event.key.startsWith(LS_SNAPSHOT_PREFIX)) return;
