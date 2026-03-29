@@ -476,10 +476,10 @@
     merged.sales = Array.isArray(raw?.sales) ? raw.sales : [];
     merged.opLog = Array.isArray(raw?.opLog) ? raw.opLog : [];
     merged.fraudLogs = Array.isArray(raw?.fraudLogs) ? raw.fraudLogs : [];
-    if (!merged.shopId) merged.shopId = makeShopId();
+    if (!merged.shopId) merged.shopId = '';
     if (!merged.sync.syncVersion || Number(merged.sync.syncVersion) < 1) merged.sync.syncVersion = 1;
     if (!merged.sync.masterDeviceId) merged.sync.masterDeviceId = state.hwid || '';
-    if (!merged.sync.currentSyncPin) {
+    if (!merged.sync.currentSyncPin && merged.shopId) {
       const legacyKey = String(merged.sync.key || '');
       merged.sync.currentSyncPin = (legacyKey && legacyKey !== String(merged.shopId || ''))
         ? legacyKey
@@ -1866,7 +1866,6 @@
     state.db.bank = qs('sys-bank')?.value?.trim() || '';
     state.db.ppay = qs('sys-ppay')?.value?.trim() || '';
     if (newPin) state.db.adminPin = newPin;
-    if (!state.db.shopId) state.db.shopId = makeShopId();
     logOperation('SAVE_SYSTEM_SETTINGS', { shopName: state.db.shopName });
     applyTheme();
     saveDb({ render: true, sync: true });
@@ -2020,17 +2019,23 @@
   async function validateProKey() {
     const key = qs('pro-key-input')?.value?.trim() || '';
     if (!key) return showToast('กรอกรหัสปลดล็อกก่อน', 'error');
+    const shopInput = qs('pro-shop-id-input')?.value?.trim() || '';
     const vault = resolveVaultApi();
+    if (typeof vault.setCurrentShopId === 'function' && shopInput) {
+      const setResult = await vault.setCurrentShopId(shopInput, state.db);
+      if (!setResult?.ok) return showToast(setResult?.message || 'shopId ไม่ถูกต้อง', 'error');
+    }
+    if (!state.db.shopId) return showToast('กรุณากรอก Shop ID ก่อนปลดล็อก', 'error');
     let result = null;
     if (typeof vault.activateProKey === 'function') {
       try {
-        result = await vault.activateProKey({ key, shopId: state.db.shopId, deviceId: state.hwid, db: state.db });
+        result = await vault.activateProKey({ key, shopId: state.db.shopId, db: state.db });
       } catch (error) {
         console.error(error);
       }
     } else if (typeof vault.validateProKey === 'function') {
       try {
-        result = await vault.validateProKey(key, state.db.shopId, state.hwid);
+        result = await vault.validateProKey(key, state.db.shopId);
       } catch (error) {
         console.error(error);
       }
@@ -2069,11 +2074,17 @@
       return;
     }
     const vault = resolveVaultApi();
-    if (typeof vault.getRequestCode === 'function') {
+    if (typeof vault.getCurrentShopId === 'function') {
       try {
-        const req = await vault.getRequestCode({ shopId: state.db.shopId, deviceId: state.hwid, db: state.db });
-        if (req?.requestCode && qs('display-hwid')) qs('display-hwid').textContent = req.requestCode;
+        state.db.shopId = await vault.getCurrentShopId(state.db);
       } catch (_) {}
+    }
+    if (qs('display-hwid')) qs('display-hwid').textContent = state.db.shopId || '-';
+    const shopInput = qs('pro-shop-id-input');
+    if (shopInput) {
+      shopInput.value = state.db.shopId || '';
+      shopInput.readOnly = Boolean(state.db.shopId);
+      shopInput.placeholder = state.db.shopId ? 'Shop ID ถูกล็อกแล้ว' : 'กรอก Shop ID ครั้งแรก';
     }
     openModal('modal-pro-unlock');
   }
@@ -3690,13 +3701,18 @@
       await hydrateAppliedOperationsFromDb();
       const raw = await resolveDbApi().load();
       state.db = normalizeDb(raw);
-      if (!state.db.shopId) state.db.shopId = makeShopId();
+      if (!state.db.shopId) {
+        const vault = resolveVaultApi();
+        if (typeof vault.getCurrentShopId === 'function') {
+          state.db.shopId = await vault.getCurrentShopId(state.db);
+        }
+      }
       if (IS_CLIENT_NODE && !getStoredClientSession()?.clientSessionToken) {
         const pendingShopId = localStorage.getItem('FAKDU_PENDING_MASTER_SHOP_ID') || '';
         if (pendingShopId) state.db.shopId = pendingShopId;
       }
       if (!state.db.sync.masterDeviceId) state.db.sync.masterDeviceId = state.hwid;
-      if (!state.db.sync.currentSyncPin) state.db.sync.currentSyncPin = generateSyncPin(state.db.shopId, state.db.sync.syncVersion || 1);
+      if (!state.db.sync.currentSyncPin && state.db.shopId) state.db.sync.currentSyncPin = generateSyncPin(state.db.shopId, state.db.sync.syncVersion || 1);
       state.db.sync.key = state.db.sync.currentSyncPin;
       await syncProStatus();
       applyTrialUiGuards();
