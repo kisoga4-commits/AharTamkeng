@@ -1296,13 +1296,6 @@
     genArea.innerHTML = '';
     status.textContent = '';
 
-    if (state.db.qrOffline) {
-      offlineImg.src = state.db.qrOffline;
-      offlineImg.classList.remove('hidden');
-      status.textContent = state.db.bank && state.db.ppay ? `${state.db.bank} • ${state.db.ppay}` : 'ใช้ QR ที่ร้านอัปไว้';
-      return;
-    }
-
     const payload = buildPromptPayPayload(state.db.ppay, state.currentCheckoutTotal, state.db.shopName);
     if (typeof QRCode === 'function' && payload) {
       new QRCode(genArea, {
@@ -1324,6 +1317,13 @@
       };
       genArea.appendChild(onlineQr);
       status.textContent = `${state.db.bank || 'พร้อมเพย์'} • ${state.db.ppay} (Online)`;
+      return;
+    }
+
+    if (state.db.qrOffline) {
+      offlineImg.src = state.db.qrOffline;
+      offlineImg.classList.remove('hidden');
+      status.textContent = state.db.bank && state.db.ppay ? `${state.db.bank} • ${state.db.ppay}` : 'ใช้ QR ที่ร้านอัปไว้';
       return;
     }
 
