@@ -272,6 +272,62 @@
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#039;');
   }
+  function readFileAsDataURL(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(reader.error || new Error('read file failed'));
+      reader.readAsDataURL(file);
+    });
+  }
+  function loadImageFromDataUrl(dataUrl = '') {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('invalid image'));
+      img.src = String(dataUrl || '');
+    });
+  }
+  async function optimizeImageFile(file, options = {}) {
+    const maxWidth = Math.max(320, Number(options.maxWidth || 1024));
+    const maxBytes = Math.max(80 * 1024, Number(options.maxBytes || 300 * 1024));
+    const outputType = String(options.outputType || 'image/jpeg');
+    const fallbackDataUrl = await readFileAsDataURL(file);
+    if (!file.type || !file.type.startsWith('image/')) return fallbackDataUrl;
+
+    try {
+      const sourceImage = await loadImageFromDataUrl(fallbackDataUrl);
+      const srcW = Number(sourceImage.naturalWidth || sourceImage.width || 0);
+      const srcH = Number(sourceImage.naturalHeight || sourceImage.height || 0);
+      if (!srcW || !srcH) return fallbackDataUrl;
+
+      const scale = Math.min(1, maxWidth / srcW);
+      const drawW = Math.max(1, Math.round(srcW * scale));
+      const drawH = Math.max(1, Math.round(srcH * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = drawW;
+      canvas.height = drawH;
+      const ctx = canvas.getContext('2d', { alpha: false });
+      if (!ctx) return fallbackDataUrl;
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, drawW, drawH);
+      ctx.drawImage(sourceImage, 0, 0, drawW, drawH);
+
+      if (outputType === 'image/png') {
+        return canvas.toDataURL('image/png');
+      }
+
+      let quality = 0.86;
+      let candidate = canvas.toDataURL(outputType, quality);
+      while (candidate.length > maxBytes * 1.37 && quality > 0.5) {
+        quality -= 0.08;
+        candidate = canvas.toDataURL(outputType, quality);
+      }
+      return candidate.length < fallbackDataUrl.length ? candidate : fallbackDataUrl;
+    } catch (_) {
+      return fallbackDataUrl;
+    }
+  }
   function getUnitLabel(id) {
     return `${state.db.unitType || 'โต๊ะ'} ${id}`;
   }
@@ -2043,34 +2099,41 @@
     showToast('บันทึกการตั้งค่าแล้ว', 'success');
   }
 
-  function handleImage(event, type) {
+  async function handleImage(event, type) {
     const file = event?.target?.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const result = e.target?.result || '';
-      if (type === 'logo') {
-        state.db.logo = result;
-        if (qs('system-logo-preview')) qs('system-logo-preview').src = result;
-        if (qs('shop-logo')) qs('shop-logo').src = result;
-        saveDb({ render: false, sync: true });
-        return;
+    let result = '';
+    try {
+      const typeConfig = {
+        logo: { maxWidth: 760, maxBytes: 260 * 1024 },
+        qr: { maxWidth: 1100, maxBytes: 420 * 1024, outputType: 'image/png' },
+        temp: { maxWidth: 960, maxBytes: 320 * 1024 }
+      };
+      result = await optimizeImageFile(file, typeConfig[type] || {});
+    } catch (_) {
+      result = await readFileAsDataURL(file);
+    }
+
+    if (type === 'logo') {
+      state.db.logo = result;
+      if (qs('system-logo-preview')) qs('system-logo-preview').src = result;
+      if (qs('shop-logo')) qs('shop-logo').src = result;
+      saveDb({ render: false, sync: true });
+      return;
+    }
+    if (type === 'qr') {
+      state.db.qrOffline = result;
+      saveDb({ render: false, sync: true });
+      showToast('อัปเดต QR Offline แล้ว', 'success');
+      return;
+    }
+    if (type === 'temp') {
+      state.tempImg = result;
+      if (qs('form-menu-preview')) {
+        qs('form-menu-preview').src = result;
+        qs('form-menu-preview').classList.remove('hidden');
       }
-      if (type === 'qr') {
-        state.db.qrOffline = result;
-        saveDb({ render: false, sync: true });
-        showToast('อัปเดต QR Offline แล้ว', 'success');
-        return;
-      }
-      if (type === 'temp') {
-        state.tempImg = result;
-        if (qs('form-menu-preview')) {
-          qs('form-menu-preview').src = result;
-          qs('form-menu-preview').classList.remove('hidden');
-        }
-      }
-    };
-    reader.readAsDataURL(file);
+    }
   }
 
   async function exportBackup() {
@@ -3696,23 +3759,28 @@
   //* scanner close
 
   //* client profile open
-  function handleClientImage(event) {
+  async function handleClientImage(event) {
     const file = event?.target?.files?.[0];
     if (!file) return;
-    if (file.size > CLIENT_AVATAR_MAX_BYTES) {
-      showToast('รูปใหญ่เกินไป (ไม่เกิน 1.5MB)', 'error');
+    if (file.size > (8 * 1024 * 1024)) {
+      showToast('รูปใหญ่เกินไป (ไม่เกิน 8MB)', 'error');
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const data = String(reader.result || '');
-      localStorage.setItem('FAKDU_CLIENT_AVATAR', data);
-      if (qs('client-avatar')) qs('client-avatar').src = data;
-      if (isClientSessionValid()) broadcastClientHeartbeat();
-      else broadcastClientAccessRequest();
-      showToast('อัปเดตรูปอุปกรณ์เสริมแล้ว', 'success');
-    };
-    reader.readAsDataURL(file);
+    let data = '';
+    try {
+      data = await optimizeImageFile(file, {
+        maxWidth: 420,
+        maxBytes: CLIENT_AVATAR_MAX_BYTES,
+        outputType: 'image/jpeg'
+      });
+    } catch (_) {
+      data = await readFileAsDataURL(file);
+    }
+    localStorage.setItem('FAKDU_CLIENT_AVATAR', data);
+    if (qs('client-avatar')) qs('client-avatar').src = data;
+    if (isClientSessionValid()) broadcastClientHeartbeat();
+    else broadcastClientAccessRequest();
+    showToast('อัปเดตรูปอุปกรณ์เสริมแล้ว', 'success');
   }
 
   function saveClientSettings() {
