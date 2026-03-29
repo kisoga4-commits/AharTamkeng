@@ -451,28 +451,28 @@
       if (type === 'success') {
         osc.type = 'triangle';
         osc.frequency.setValueAtTime(420, state.audioCtx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(920, state.audioCtx.currentTime + 0.15);
-        gain.gain.setValueAtTime(0.08, state.audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.0001, state.audioCtx.currentTime + 0.2);
+        osc.frequency.exponentialRampToValueAtTime(980, state.audioCtx.currentTime + 0.2);
+        gain.gain.setValueAtTime(0.16, state.audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.0001, state.audioCtx.currentTime + 0.24);
         osc.start();
-        osc.stop(state.audioCtx.currentTime + 0.22);
+        osc.stop(state.audioCtx.currentTime + 0.25);
         return;
       }
       if (type === 'error') {
         osc.type = 'sawtooth';
         osc.frequency.setValueAtTime(190, state.audioCtx.currentTime);
-        gain.gain.setValueAtTime(0.08, state.audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.0001, state.audioCtx.currentTime + 0.18);
+        gain.gain.setValueAtTime(0.14, state.audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.0001, state.audioCtx.currentTime + 0.22);
         osc.start();
-        osc.stop(state.audioCtx.currentTime + 0.18);
+        osc.stop(state.audioCtx.currentTime + 0.22);
         return;
       }
       osc.type = 'sine';
       osc.frequency.setValueAtTime(620, state.audioCtx.currentTime);
-      gain.gain.setValueAtTime(0.05, state.audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.0001, state.audioCtx.currentTime + 0.05);
+      gain.gain.setValueAtTime(0.1, state.audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, state.audioCtx.currentTime + 0.08);
       osc.start();
-      osc.stop(state.audioCtx.currentTime + 0.06);
+      osc.stop(state.audioCtx.currentTime + 0.09);
     } catch (_) {}
   }
 
@@ -1841,6 +1841,7 @@
   }
 
   function saveMenuItem() {
+    if (!canManageOrders()) return showToast('ต้องเข้าโหมดแอดมินก่อนบันทึกเมนู', 'error');
     const id = qs('form-menu-id')?.value?.trim();
     const name = qs('form-menu-name')?.value?.trim();
     const price = Number(qs('form-menu-price')?.value || 0);
@@ -1878,7 +1879,16 @@
       logOperation('CREATE_MENU_ITEM', { name, price });
     }
     closeModal('modal-menu-form');
+    const modalEl = qs('modal-menu-form');
+    if (modalEl) {
+      modalEl.classList.remove('open', 'flex');
+      modalEl.classList.add('hidden');
+      modalEl.style.display = 'none';
+    }
+    state.tempAddons = [];
+    state.tempImg = '';
     saveDb({ render: true, sync: true });
+    setTimeout(() => closeModal('modal-menu-form'), 0);
     showToast('บันทึกเมนูแล้ว', 'success');
   }
 
