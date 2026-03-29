@@ -118,6 +118,48 @@
     throw new Error('ไม่พบ databaseURL จาก firebase-init.js');
   }
 
+  async function verifyLicense(shopId, licenseCode) {
+    const sid = normalizeShopId(shopId);
+    const code = normalizeLicenseCode(licenseCode);
+
+    if (!sid || !code) return false;
+
+    let firebaseRuntime;
+    try {
+      firebaseRuntime = await waitFirebaseReady();
+    } catch (_) {
+      return false;
+    }
+
+    try {
+      const canUseSdk = typeof firebaseRuntime?.ref === 'function' && typeof firebaseRuntime?.get === 'function';
+      let licenseDoc = null;
+
+      if (canUseSdk) {
+        const licenseRef = firebaseRuntime.ref(firebaseRuntime.db, `licenses/${sid}`);
+        const snap = await firebaseRuntime.get(licenseRef);
+        licenseDoc = snap.exists() ? snap.val() : null;
+      } else {
+        const baseUrl = getRealtimeDbUrl(firebaseRuntime);
+        const pathShopId = encodeURIComponent(sid);
+        const response = await fetch(`${baseUrl}/licenses/${pathShopId}.json`, {
+          method: 'GET',
+          cache: 'no-store'
+        });
+        if (!response.ok) return false;
+        licenseDoc = await response.json();
+      }
+
+      if (!licenseDoc || typeof licenseDoc !== 'object') return false;
+      if (licenseDoc.active !== true) return false;
+      if (String(licenseDoc.licenseCode || '') !== code) return false;
+
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   async function checkLicenseFromRealtimeDb({ shopId = '', licenseCode = '' } = {}) {
     const sid = normalizeShopId(shopId);
     const code = normalizeLicenseCode(licenseCode);
@@ -129,52 +171,21 @@
       return { valid: false, message: 'กรอกรหัส license ก่อน' };
     }
 
-    let firebaseRuntime;
-    try {
-      firebaseRuntime = await waitFirebaseReady();
-    } catch (error) {
-      return { valid: false, message: error?.message || 'Firebase ไม่พร้อม' };
+    const valid = await verifyLicense(sid, code);
+    if (!valid) {
+      return { valid: false, message: 'license ไม่ถูกต้องหรือยังไม่ active' };
     }
 
-    try {
-      const baseUrl = getRealtimeDbUrl(firebaseRuntime);
-      const pathShopId = encodeURIComponent(sid);
-      const response = await fetch(`${baseUrl}/licenses/${pathShopId}.json`, {
-        method: 'GET',
-        cache: 'no-store'
-      });
-
-      if (!response.ok) {
-        return { valid: false, message: `อ่าน license ไม่สำเร็จ (HTTP ${response.status})` };
-      }
-
-      const licenseDoc = await response.json();
-
-      if (!licenseDoc || typeof licenseDoc !== 'object') {
-        return { valid: false, message: 'ไม่พบ shop นี้ในระบบ license' };
-      }
-
-      if (licenseDoc.active !== true) {
-        return { valid: false, message: 'license ยังไม่ active' };
-      }
-
-      if (String(licenseDoc.licenseCode || '') !== code) {
-        return { valid: false, message: 'licenseCode ไม่ถูกต้อง' };
-      }
-
-      return {
-        valid: true,
-        token: code,
-        payload: {
-          shopId: sid,
-          active: true,
-          source: 'firebase_realtime_db'
-        },
-        message: 'ตรวจสอบ license ผ่าน'
-      };
-    } catch (error) {
-      return { valid: false, message: error?.message || 'เชื่อมต่อ Firebase ไม่สำเร็จ' };
-    }
+    return {
+      valid: true,
+      token: code,
+      payload: {
+        shopId: sid,
+        active: true,
+        source: 'firebase_realtime_db'
+      },
+      message: 'ตรวจสอบ license ผ่าน'
+    };
   }
 
   async function getActivationRequest({ shopId = '', deviceId = '', db = {} } = {}) {
@@ -366,6 +377,7 @@
   window.FakduVault = {
     APP_VERSION,
     normalizeShopId,
+    verifyLicense,
     getActivationRequest,
     createGenKey,
     createLicenseToken,

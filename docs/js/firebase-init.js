@@ -1,5 +1,5 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js';
-import { getDatabase } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-database.js';
+import { getDatabase, ref, get } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-database.js';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyC4jOmVcZp0HmmDqZCmHufnq2yyoPcvyVM',
@@ -17,7 +17,9 @@ const db = getDatabase(app);
 window.FakduFirebase = {
   ready: true,
   app,
-  db
+  db,
+  ref,
+  get
 };
 
 export { app, db, firebaseConfig };
