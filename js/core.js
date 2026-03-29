@@ -1813,7 +1813,15 @@
   function clearSales() {
     if (IS_CLIENT_NODE) return showToast('รีเซ็ตยอดขายได้เฉพาะเครื่องหลัก', 'error');
     if (!canManageOrders()) return showToast('ต้องเข้าโหมดแอดมินก่อนรีเซ็ตยอดขาย', 'error');
-    if (!confirm('ล้างประวัติยอดขายทั้งหมด?')) return;
+    openModal('modal-clear-sales-confirm');
+  }
+
+  function cancelClearSalesConfirm() {
+    closeModal('modal-clear-sales-confirm');
+  }
+
+  function confirmClearSalesAction() {
+    closeModal('modal-clear-sales-confirm');
     state.db.sales = [];
     logOperation('CLEAR_SALES');
     saveDb({ render: true, sync: true });
@@ -4077,6 +4085,8 @@
     switchDashTab,
     calculateCustomSalesRealtime,
     clearSales,
+    cancelClearSalesConfirm,
+    confirmClearSalesAction,
     selectSalesCompareMode,
     openMenuModal,
     editItem,

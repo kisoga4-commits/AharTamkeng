@@ -916,7 +916,8 @@ hr {
 #modal-client-scanner,
 #modal-sync-key-confirm,
 #modal-client-approvals,
-#modal-client-request-popup {
+#modal-client-request-popup,
+#modal-clear-sales-confirm {
   position: fixed;
   inset: 0;
   z-index: 120;
@@ -942,6 +943,7 @@ hr {
 #modal-sync-key-confirm.open,
 #modal-client-approvals.open,
 #modal-client-request-popup.open,
+#modal-clear-sales-confirm.open,
 .modal.open {
   display: flex;
 }
@@ -960,6 +962,7 @@ hr {
 #modal-sync-key-confirm > *,
 #modal-client-approvals > *,
 #modal-client-request-popup > *,
+#modal-clear-sales-confirm > *,
 .modal-sheet,
 .modal-card {
   width: 100%;
@@ -977,6 +980,16 @@ hr {
 #modal-client-scanner > *,
 #modal-client-request-popup > * {
   max-width: 430px;
+}
+
+.clear-sales-modal-card {
+  width: 100%;
+  max-width: 430px;
+  border-radius: 28px;
+  padding: 24px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.99) 0%, rgba(248,250,252,0.99) 100%);
+  border: 1px solid rgba(255,255,255,0.74);
+  box-shadow: 0 24px 60px rgba(2, 6, 23, 0.28);
 }
 
 .master-approval-overlay {

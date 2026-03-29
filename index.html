@@ -261,23 +261,19 @@
                     <input id="sys-bank" type="text" placeholder="กสิกรไทย" class="w-full border-2 p-3 rounded-xl text-sm font-bold bg-gray-50 outline-none">
                 </div>
                 <div>
-                    <label class="text-[10px] text-gray-400 font-bold mb-1 block uppercase">พร้อมเพย์</label>
+                    <div class="mb-1 flex items-center justify-between gap-2">
+                        <label class="text-[10px] text-gray-400 font-bold block uppercase">พร้อมเพย์</label>
+                        <label class="inline-flex items-center cursor-pointer shrink-0">
+                            <input id="sys-promptpay-dynamic" type="checkbox" class="sr-only peer">
+                            <div class="relative w-12 h-7 bg-gray-300 rounded-full peer peer-checked:bg-emerald-500 after:content-[''] after:absolute after:top-1 after:left-1 after:w-5 after:h-5 after:bg-white after:rounded-full after:transition-all peer-checked:after:translate-x-5"></div>
+                        </label>
+                    </div>
                     <input id="sys-ppay" type="text" placeholder="เบอร์โทร/บัตร" class="w-full border-2 p-3 rounded-xl text-sm font-bold bg-gray-50 outline-none">
                 </div>
             </div>
 
             <label class="text-[10px] text-gray-400 font-bold mb-2 block uppercase">รูป QR รับเงิน (ใช้ได้แม้ไม่มีเน็ต)</label>
             <input type="file" accept="image/*" class="w-full border-2 p-2 rounded-xl text-xs font-bold mb-6 bg-gray-50" onchange="handleImage(event, 'qr')">
-            <div class="mb-6 bg-gray-50 border border-gray-200 rounded-2xl p-3 flex items-center justify-between gap-3">
-                <div class="min-w-0">
-                    <div class="text-[11px] font-black text-slate-800">โหมด PromptPay (สร้างตามยอดเงิน)</div>
-                    <div class="text-[10px] text-gray-500 font-bold mt-1">เปิด = สร้าง QR ใหม่ตามยอดปัจจุบันแบบ Real-time</div>
-                </div>
-                <label class="inline-flex items-center cursor-pointer shrink-0">
-                    <input id="sys-promptpay-dynamic" type="checkbox" class="sr-only peer">
-                    <div class="relative w-12 h-7 bg-gray-300 rounded-full peer peer-checked:bg-emerald-500 after:content-[''] after:absolute after:top-1 after:left-1 after:w-5 after:h-5 after:bg-white after:rounded-full after:transition-all peer-checked:after:translate-x-5"></div>
-                </label>
-            </div>
 
             <div class="border-t pt-6 mt-2">
                 <label class="text-[10px] font-bold text-red-500 mb-2 block uppercase">เปลี่ยนรหัส Admin PIN</label>
@@ -326,6 +322,19 @@
         </div>
     </div>
     <!--** modal-admin-pin close -->
+
+    <!--* modal-clear-sales-confirm open -->
+    <div id="modal-clear-sales-confirm" class="hidden">
+        <div class="clear-sales-modal-card">
+            <h3 class="text-xl font-black text-slate-900 mb-2">ยืนยันการล้างยอดขาย</h3>
+            <p class="text-sm font-bold text-slate-500 mb-6">ล้างประวัติยอดขายทั้งหมดใช่หรือไม่?</p>
+            <div class="grid grid-cols-2 gap-3">
+                <button onclick="cancelClearSalesConfirm()" class="py-3 rounded-2xl border border-slate-200 bg-white text-slate-600 font-black active:scale-95">ยกเลิก</button>
+                <button onclick="confirmClearSalesAction()" class="py-3 rounded-2xl bg-red-500 text-white font-black shadow-sm active:scale-95">ตกลง</button>
+            </div>
+        </div>
+    </div>
+    <!--** modal-clear-sales-confirm close -->
 
     <!--* modal-recovery open -->
     <div class="modal-overlay hidden" id="modal-recovery">
