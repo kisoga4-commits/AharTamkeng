@@ -181,6 +181,48 @@
   function formatMoney(n) {
     return Number(n || 0).toLocaleString('th-TH');
   }
+  function toPromptPayTarget(raw = '') {
+    const digits = String(raw || '').replace(/\D/g, '');
+    if (digits.length === 10 && digits.startsWith('0')) {
+      return `0066${digits.slice(1)}`;
+    }
+    return digits;
+  }
+  function emvField(id, value) {
+    const text = String(value ?? '');
+    return `${id}${String(text.length).padStart(2, '0')}${text}`;
+  }
+  function crc16Ccitt(input = '') {
+    let crc = 0xFFFF;
+    for (let i = 0; i < input.length; i += 1) {
+      crc ^= input.charCodeAt(i) << 8;
+      for (let bit = 0; bit < 8; bit += 1) {
+        crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) : (crc << 1);
+        crc &= 0xFFFF;
+      }
+    }
+    return crc.toString(16).toUpperCase().padStart(4, '0');
+  }
+  function buildPromptPayPayload(ppay, amount = 0, shopName = '') {
+    const target = toPromptPayTarget(ppay);
+    if (!target) return '';
+    const amountNum = Number(amount || 0);
+    const amountText = amountNum > 0 ? amountNum.toFixed(2) : '';
+    const merchantInfo = emvField('29', `${emvField('00', 'A000000677010111')}${emvField('01', target)}`);
+    const safeName = String(shopName || 'FAKDU').trim().slice(0, 25) || 'FAKDU';
+    let payload = '';
+    payload += emvField('00', '01');
+    payload += emvField('01', amountText ? '12' : '11');
+    payload += merchantInfo;
+    payload += emvField('52', '0000');
+    payload += emvField('53', '764');
+    if (amountText) payload += emvField('54', amountText);
+    payload += emvField('58', 'TH');
+    payload += emvField('59', safeName);
+    payload += emvField('60', 'BANGKOK');
+    const crcBase = `${payload}6304`;
+    return `${crcBase}${crc16Ccitt(crcBase)}`;
+  }
   function isTransferMethod(method = '') {
     const value = String(method || '').toLowerCase();
     return value === 'transfer' || value === 'qr' || value === 'promptpay';
@@ -1260,9 +1302,10 @@
       return;
     }
 
-    if (typeof QRCode === 'function' && state.db.ppay) {
+    const payload = buildPromptPayPayload(state.db.ppay, state.currentCheckoutTotal, state.db.shopName);
+    if (typeof QRCode === 'function' && payload) {
       new QRCode(genArea, {
-        text: `${state.db.ppay}|${state.currentCheckoutTotal}|${state.db.shopName}`,
+        text: payload,
         width: 150,
         height: 150
       });
@@ -1270,8 +1313,21 @@
       return;
     }
 
+    if (payload && navigator.onLine) {
+      const onlineQr = document.createElement('img');
+      onlineQr.className = 'w-full h-full object-cover';
+      onlineQr.alt = 'PromptPay QR';
+      onlineQr.src = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(payload)}`;
+      onlineQr.onerror = () => {
+        genArea.innerHTML = '<div class="text-xs text-gray-400 font-bold text-center">ไม่สามารถโหลด QR ออนไลน์ได้</div>';
+      };
+      genArea.appendChild(onlineQr);
+      status.textContent = `${state.db.bank || 'พร้อมเพย์'} • ${state.db.ppay} (Online)`;
+      return;
+    }
+
     genArea.innerHTML = '<div class="text-xs text-gray-400 font-bold text-center">ยังไม่มี QR<br>กรุณาอัปโหลดในหน้าระบบ</div>';
-    status.textContent = 'ไม่มี QR พร้อมใช้งาน';
+    status.textContent = state.db.ppay && !navigator.onLine ? 'ออฟไลน์อยู่: ใช้รูป QR ที่อัปโหลดไว้' : 'ไม่มี QR พร้อมใช้งาน';
   }
 
   function deleteOrderItem(index) {
