@@ -214,7 +214,15 @@
 
   async function verifyLicense(inputCode = '', context = {}) {
     const result = await verifyLicenseDetail(inputCode, context);
-    return Boolean(result.valid);
+    const sid = getCurrentShopId(context);
+
+    if (result.valid && sid) {
+      saveProStatus(sid);
+      return true;
+    }
+
+    clearProStatus();
+    return false;
   }
 
   async function checkLicenseFromRealtimeDb({ shopId = '', licenseCode = '' } = {}) {
