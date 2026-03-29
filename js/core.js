@@ -1960,9 +1960,9 @@
 
   //* recovery open
   function updateRecoveryStateLabels() {
-    if (qs('recovery-phone-state')) qs('recovery-phone-state').textContent = state.db.recovery.phone || 'ยังไม่ตั้งค่า';
-    if (qs('recovery-color-state')) qs('recovery-color-state').textContent = COLOR_MAP[state.db.recovery.color] || 'ยังไม่ตั้งค่า';
-    if (qs('recovery-animal-state')) qs('recovery-animal-state').textContent = ANIMAL_MAP[state.db.recovery.animal] || 'ยังไม่ตั้งค่า';
+    if (qs('recovery-phone-state-2')) qs('recovery-phone-state-2').textContent = state.db.recovery.phone || 'ยังไม่ตั้งค่า';
+    if (qs('recovery-color-state-2')) qs('recovery-color-state-2').textContent = COLOR_MAP[state.db.recovery.color] || 'ยังไม่ตั้งค่า';
+    if (qs('recovery-animal-state-2')) qs('recovery-animal-state-2').textContent = ANIMAL_MAP[state.db.recovery.animal] || 'ยังไม่ตั้งค่า';
   }
 
   function saveRecoveryData() {
@@ -2040,7 +2040,6 @@
     }
 
     state.db.licenseToken = result?.token || key;
-    state.db.licenseActive = true;
     logOperation('ACTIVATE_PRO');
     await syncProStatus();
     applyTheme();
@@ -3608,7 +3607,52 @@
     state.deferredInstallPrompt = event;
     qs('pwa-install-banner')?.classList.remove('hidden');
   });
+
+  window.addEventListener('appinstalled', () => {
+    state.deferredInstallPrompt = null;
+    localStorage.removeItem(LS_DEFERRED_INSTALL);
+    qs('pwa-install-banner')?.classList.add('hidden');
+  });
   //* install close
+
+  async function fallbackCopyText(text = '') {
+    const input = document.createElement('textarea');
+    input.value = String(text || '');
+    input.setAttribute('readonly', 'readonly');
+    input.style.position = 'fixed';
+    input.style.opacity = '0';
+    input.style.pointerEvents = 'none';
+    document.body.appendChild(input);
+    input.focus();
+    input.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(input);
+    return ok;
+  }
+
+  async function copyTextTwoLayer(text = '') {
+    const safeText = String(text || '').trim();
+    if (!safeText) return false;
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      try {
+        await navigator.clipboard.writeText(safeText);
+        return true;
+      } catch (_) {}
+    }
+    try {
+      return await fallbackCopyText(safeText);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  async function copyUnlockShopId() {
+    const shopId = String(state.db.shopId || '').trim();
+    if (!shopId) return showToast('ไม่พบ SHOP ID', 'error');
+    const copied = await copyTextTwoLayer(shopId);
+    if (!copied) return showToast('คัดลอกไม่สำเร็จ กรุณาคัดลอกเอง', 'error');
+    showToast('คัดลอก SHOP ID แล้ว', 'success');
+  }
 
   //* timers open
   function startLiveTimers() {
@@ -3805,6 +3849,7 @@
     closeModal,
     openModal,
     installPWA,
+    copyUnlockShopId,
     switchTab,
     attemptAdmin,
     verifyAdminPin,
